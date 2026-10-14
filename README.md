@@ -12,9 +12,8 @@ Sürekli güncellenen (rolling) bir dağıtımdır: yeni sürümler `mindpkg upg
 > updates arrive through `mindpkg upgrade` or Mind Arc → System Update. All MindOS code in this
 > repository is licensed under GPL-3.0-or-later.
 
-- İndir: [Releases](https://github.com/MindOS-Official/paradise/releases)
+- İndir: <https://mindos.studio>
 - Paket deposu: [MindOS-Official/packages](https://github.com/MindOS-Official/packages)
-- Web sitesi: <https://mindos-official.github.io/mindos_/>
 
 ## Neler var
 
@@ -40,3 +39,8 @@ Derleme adımları için [BUILDING.md](BUILDING.md), üçüncü taraf bileşenle
 
 Bu repodaki MindOS kodu **GNU GPL 3.0 veya sonrası** ile lisanslanmıştır ([LICENSE](LICENSE)).
 Üçüncü taraf bileşenler kendi lisanslarıyla gelir ([THIRD_PARTY.md](THIRD_PARTY.md)).
+
+MindOS adı, lotus logosu ve MindOS görselleri (logo, duvar kağıdı, simgeler, açılış ve kurulum
+görselleri) GPL kapsamında değildir. MindOS'u ve değiştirilmemiş türevlerini dağıtmak için
+kullanılabilirler; MindOS ile karıştırılabilecek başka projelerde kullanılamazlar. Kendi türevinizi
+farklı bir adla dağıtıyorsanız `branding/` ve ilgili görselleri kendi görsellerinizle değiştirin.
