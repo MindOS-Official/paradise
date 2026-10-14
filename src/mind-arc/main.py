@@ -565,44 +565,32 @@ def get_cpu_model():
                     return line.split(':', 1)[1].strip()
     except Exception:
         pass
-    return platform.processor() or "AMD Ryzen CPU"
+    return platform.processor() or "—"
 
 
 def get_cpu_temp():
-    hwmon_paths = glob.glob("/sys/class/hwmon/hwmon*")
-    for path in hwmon_paths:
-        try:
-            with open(os.path.join(path, "name"), "r") as f:
-                name = f.read().strip()
-            if name == "k10temp":
-                temp_file = os.path.join(path, "temp1_input")
-                if os.path.exists(temp_file):
-                    with open(temp_file, "r") as f:
-                        return int(f.read().strip()) / 1000.0
-        except Exception:
-            pass
-            
-    for path in hwmon_paths:
-        try:
-            with open(os.path.join(path, "name"), "r") as f:
-                name = f.read().strip()
-            if name == "coretemp":
-                temp_file = os.path.join(path, "temp1_input")
-                if os.path.exists(temp_file):
-                    with open(temp_file, "r") as f:
-                        return int(f.read().strip()) / 1000.0
-        except Exception:
-            pass
-            
+    """İşlemci sıcaklığı (°C). Sensör bulunamazsa None döner; uydurma bir değer gösterilmez."""
     try:
         temps = psutil.sensors_temperatures()
-        if 'k10temp' in temps and temps['k10temp']:
-            return temps['k10temp'][0].current
-        if 'coretemp' in temps and temps['coretemp']:
-            return temps['coretemp'][0].current
     except Exception:
-        pass
-    return 35.0
+        temps = {}
+    # AMD: k10temp/zenpower (Tctl), Intel: coretemp (Package id 0), ARM: cpu_thermal
+    for name, preferred in (("k10temp", ("Tctl", "Tdie")), ("zenpower", ("Tdie", "Tctl")),
+                            ("coretemp", ("Package id 0",)), ("cpu_thermal", ()), ("soc_thermal", ())):
+        entries = [e for e in temps.get(name, []) if e.current]
+        if entries:
+            best = next((e for e in entries if e.label in preferred), entries[0])
+            return best.current
+    for zone in glob.glob("/sys/class/thermal/thermal_zone*"):
+        try:
+            with open(os.path.join(zone, "type")) as f:
+                if f.read().strip() not in ("x86_pkg_temp", "cpu-thermal", "cpu_thermal"):
+                    continue
+            with open(os.path.join(zone, "temp")) as f:
+                return int(f.read().strip()) / 1000.0
+        except Exception:
+            pass
+    return None
 
 
 def get_gpu_info():
@@ -712,18 +700,27 @@ def get_gpu_pwm_paths():
 
 
 def get_ram_speed():
+    """RAM hızı ve tipi, systemd-udevd'nin okuduğu DMI bilgisinden (yetki gerektirmez).
+    Kurulu modüllerden en yüksek çalışma hızı gösterilir; okunamazsa "—"."""
     try:
-        res = subprocess.check_output("lshw -C memory 2>/dev/null", shell=True, text=True)
-        for line in res.splitlines():
-            if "size:" in line.lower() and "clock" in line.lower():
-                parts = line.split(":")
-                if len(parts) > 1:
-                    val = parts[1].strip()
-                    if val:
-                        return val
+        out = subprocess.run(["udevadm", "info", "-q", "property", "-p", "/devices/virtual/dmi/id"],
+                             capture_output=True, text=True, timeout=5).stdout
+        props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+        best = None
+        for key, size in props.items():
+            m = re.fullmatch(r"MEMORY_DEVICE_(\d+)_SIZE", key)
+            if not m or not size.isdigit() or int(size) == 0:
+                continue
+            i = m.group(1)
+            speed = props.get(f"MEMORY_DEVICE_{i}_CONFIGURED_SPEED_MTS") or props.get(f"MEMORY_DEVICE_{i}_SPEED_MTS")
+            if speed and speed.isdigit() and int(speed) > 0 and (best is None or int(speed) > best[0]):
+                best = (int(speed), props.get(f"MEMORY_DEVICE_{i}_TYPE", ""))
+        if best:
+            kind = best[1] if best[1] and best[1] not in ("Unknown", "Other") else ""
+            return f"{kind} · {best[0]} MT/s" if kind else f"{best[0]} MT/s"
     except Exception:
         pass
-    return "3200 MHz"
+    return "—"
 
 
 def get_disk_usage():
@@ -926,7 +923,7 @@ class MindArcWindow(Adw.ApplicationWindow):
         self.latest_stats = {
             "uptime_str": "...",
             "cpu_usage": 0.0,
-            "cpu_temp": 35.0,
+            "cpu_temp": None,
             "ram_percent": 0.0,
             "ram_used_gb": 0.0,
             "ram_total_gb": 0.0,
@@ -934,8 +931,8 @@ class MindArcWindow(Adw.ApplicationWindow):
             "gpu_usage": 0,
             "gpu_temp": 0.0,
             "gpu_driver": "N/A",
-            "cpu_model": "AMD Processor",
-            "ram_speed": "3200 MHz",
+            "cpu_model": "…",
+            "ram_speed": "…",
             "cpu_logical": 4,
             "cpu_physical": 2,
             "cpu_speed": "N/A",
@@ -2000,7 +1997,8 @@ class MindArcWindow(Adw.ApplicationWindow):
         
         self.label_uptime_val.set_text(stats["uptime_str"])
         self.cpu_progress.set_fraction(stats["cpu_usage"] / 100.0)
-        self.label_cpu_val.set_text(f"{stats['cpu_usage']:.1f}% | {stats['cpu_temp']:.1f}°C")
+        temp = stats['cpu_temp']
+        self.label_cpu_val.set_text(f"{stats['cpu_usage']:.1f}% | " + (f"{temp:.1f}°C" if temp is not None else "—"))
         self.ram_progress.set_fraction(stats["ram_percent"] / 100.0)
         self.label_ram_val.set_text(f"{stats['ram_used_gb']:.1f} / {stats['ram_total_gb']:.1f} GB ({stats['ram_percent']:.1f}%)")
         self.gpu_progress.set_fraction(stats["gpu_usage"] / 100.0)
