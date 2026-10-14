@@ -1,0 +1,39 @@
+---
+componentName:   debian
+welcomeStyleCalamares: false
+welcomeExpandingLogo: true
+windowExpanding: normal
+windowSize: 850px,600px
+windowPlacement: center
+
+strings:
+    productName:         MindOS Paradise
+    shortProductName:    MindOS Paradise
+    version:             Paradise
+    shortVersion:        Paradise
+    versionedName:       MindOS Paradise
+    shortVersionedName:  MindOS Paradise
+    bootloaderEntryName: MindOS Paradise
+    productUrl:          https://mindos-official.github.io/mindos_/
+    supportUrl:          https://mindos-official.github.io/mindos_/
+    knownIssuesUrl:      https://github.com/MindOS-Official
+    releaseNotesUrl:     https://mindos-official.github.io/mindos_/
+    donateUrl:           https://mindos-official.github.io/mindos_/
+
+sidebar: qml
+navigation: widget
+
+images:
+    productLogo:         "debian-logo.png"
+    productIcon:         "debian-logo.png"
+    productWelcome:      "welcome.png"
+
+slideshow:               "show.qml"
+
+style:
+   SidebarBackground:        "#eee8d5"
+   SidebarText:              "#586e75"
+   SidebarTextCurrent:       "#073642"
+   SidebarBackgroundCurrent: "#d3cbb7"
+
+slideshowAPI: 2

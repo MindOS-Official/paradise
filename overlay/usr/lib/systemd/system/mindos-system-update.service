@@ -1,0 +1,22 @@
+# MindOS "yeniden başlat ve güncelle": 'mindpkg upgrade --offline' güncellemeyi indirip
+# /system-update işaretini koyar; açılışta systemd bu servisi system-update.target'ta
+# çalıştırır (systemd.offline-updates(7)). Plymouth güncelleme ekranında ilerleme gösterilir.
+[Unit]
+Description=MindOS System Update
+Documentation=man:systemd.offline-updates(7)
+DefaultDependencies=no
+Requires=sysinit.target
+After=sysinit.target systemd-journald.socket system-update-pre.target
+Before=shutdown.target system-update.target
+ConditionPathExists=/system-update
+ConditionPathExists=/var/lib/mindpkg/offline/plan.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mindpkg offline-apply
+StandardOutput=append:/var/log/mindos-update.log
+StandardError=inherit
+Environment=LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1
+TimeoutStartSec=infinity
+# mindpkg beklenmedik şekilde çökse bile sistem normal açılışa döner (işaret mindpkg'de ilk iş silinir)
+FailureAction=reboot

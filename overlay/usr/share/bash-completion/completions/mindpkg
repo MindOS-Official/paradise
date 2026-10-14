@@ -1,0 +1,22 @@
+# mindpkg bash completion (MindOS)
+_mindpkg() {
+    local cur prev cmds
+    cur="${COMP_WORDS[COMP_CWORD]}"; prev="${COMP_WORDS[1]}"
+    cmds="install remove update upgrade search list info build clean version"
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "$cmds" -- "$cur") ); return
+    fi
+    case "$prev" in
+        remove|rm|del|uninstall|info|show)
+            COMPREPLY=( $(compgen -W "$(ls /var/lib/mindpkg/installed 2>/dev/null | sed 's/\.json$//')" -- "$cur") ) ;;
+        install|add|i)
+            local names
+            names=$(python3 -c 'import json,glob
+for f in glob.glob("/var/lib/mindpkg/repos/*.json"):
+    try: print(" ".join(p["name"] for p in json.load(open(f)).get("packages",[])))
+    except Exception: pass' 2>/dev/null)
+            COMPREPLY=( $(compgen -W "$names" -- "$cur") $(compgen -f -X '!*.mind' -- "$cur") ) ;;
+        build) COMPREPLY=( $(compgen -d -- "$cur") ) ;;
+    esac
+}
+complete -F _mindpkg mindpkg

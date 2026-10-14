@@ -1,0 +1,193 @@
+#!/bin/bash
+# MindOS Paradise - USB belleğe/harici diske TAM SİSTEM kurulumu
+# (Mind Arc tarafından pkexec ile çağrılır). Sonuç canlı (live) sistem değil, bir SSD'ye
+# kurulmuş gibi normal bir MindOS'tur: kalıcıdır, güncellenir, parola ister.
+#
+# kullanım: usb-writer <aygıt> <iso> <kullanıcı> <tr|en> <tr|us>
+# Parola standart girdiden okunur (komut satırında görünmez).
+#
+# Disk düzeni (GPT, hem BIOS hem UEFI bilgisayarda açılır):
+#   1: 1 MiB    BIOS boot (bios_grub)
+#   2: 512 MiB  EFI sistem bölümü (FAT32)  -> shim + imzalı GRUB (Secure Boot uyumlu)
+#   3: kalan    ext4 kök dosya sistemi "MindOS"
+#
+# Çıktı: "PROGRESS <0-1> <adım>" satırları; hata durumunda "ERROR <kod>" ve çıkış kodu 1.
+set -euo pipefail
+export LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive
+
+DEV=${1:-} ISO=${2:-} USERNAME=${3:-} LANGSEL=${4:-} KBD=${5:-}
+MIN_BYTES=$((12 * 1000 * 1000 * 1000))   # 12 GB: sistem ~5 GB + güncellemeler ve kullanıcı dosyaları
+WORK=$(mktemp -d /run/mindos-usb.XXXXXX)
+ISO_MNT=$WORK/iso SQ_MNT=$WORK/sq T=$WORK/target
+
+progress() { echo "PROGRESS $1 $2"; }
+fail() { echo "ERROR $1" >&2; exit 1; }
+
+cleanup() {
+    for m in "$T/boot/efi" "$T/sys/firmware/efi/efivars" "$T/sys" "$T/proc" "$T/dev/pts" "$T/dev" "$T/run" "$T" "$SQ_MNT" "$ISO_MNT"; do
+        mountpoint -q "$m" 2>/dev/null && umount -l "$m" || true
+    done
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+# --- Girdi doğrulama ---
+[[ $DEV =~ ^/dev/(sd[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+)$ ]] || fail invalid_device
+[ -b "$DEV" ] || fail invalid_device
+read -r RM TRAN < <(lsblk -dno RM,TRAN "$DEV")
+[ "$RM" = "1" ] || [ "$TRAN" = "usb" ] || fail not_removable
+# Çalışan sistemin kendi diskine asla yazma
+for mp in / /run/live/medium /boot /boot/efi /home; do
+    src=$(findmnt -no SOURCE "$mp" 2>/dev/null || true)
+    [ -n "$src" ] || continue
+    parent=$(lsblk -no PKNAME "$src" 2>/dev/null | head -1 || true)
+    { [ "/dev/$parent" = "$DEV" ] || [ "$src" = "$DEV" ]; } && fail system_disk
+done
+[ "$(lsblk -bdno SIZE "$DEV")" -ge "$MIN_BYTES" ] || fail too_small
+[ -f "$ISO" ] && [[ ${ISO,,} == *.iso ]] || fail invalid_iso
+[[ $USERNAME =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$USERNAME" != root ] || fail invalid_username
+case $LANGSEL in
+    tr) LOCALE=tr_TR.UTF-8 TZ_NAME=Europe/Istanbul ;;
+    en) LOCALE=en_US.UTF-8 TZ_NAME=UTC ;;
+    *) fail invalid_language ;;
+esac
+case $KBD in tr|us) ;; *) fail invalid_keyboard ;; esac
+IFS= read -r PASSWORD || true
+[ ${#PASSWORD} -ge 6 ] || fail weak_password
+HASH=$(printf '%s' "$PASSWORD" | openssl passwd -6 -stdin)
+unset PASSWORD
+
+case $DEV in *[0-9]) P=${DEV}p ;; *) P=$DEV ;; esac
+
+# --- 1. Bölümleme (GPT) ---
+progress 0.02 partition
+for part in "$DEV"?*; do umount "$part" 2>/dev/null || true; done
+wipefs -aq "$DEV"
+parted -s "$DEV" mklabel gpt \
+    mkpart biosboot 1MiB 2MiB set 1 bios_grub on \
+    mkpart ESP fat32 2MiB 514MiB set 2 esp on \
+    mkpart MindOS ext4 514MiB 100% || fail partition
+udevadm settle
+[ -b "${P}2" ] && [ -b "${P}3" ] || fail partition
+
+# --- 2. Biçimlendirme ---
+progress 0.05 format
+mkfs.vfat -F 32 -n MINDOS_EFI "${P}2" >/dev/null || fail format
+mkfs.ext4 -q -F -L MindOS "${P}3" || fail format
+
+# --- 3. Sistem dosyaları (canlı imaj değil, sıkıştırılmış sistem açılarak kopyalanır) ---
+mkdir -p "$ISO_MNT" "$SQ_MNT" "$T"
+mount -o loop,ro "$ISO" "$ISO_MNT" || fail mount_iso
+[ -f "$ISO_MNT/live/filesystem.squashfs" ] || fail invalid_iso
+mount -t squashfs -o loop,ro "$ISO_MNT/live/filesystem.squashfs" "$SQ_MNT" || fail mount_iso
+mount -o noatime "${P}3" "$T" || fail mount_target
+progress 0.08 copy
+TOTAL=$(du -sbx "$SQ_MNT" | cut -f1)
+BASE=$(df -B1 --output=used "$T" | tail -1)
+rsync -aHAXx --numeric-ids "$SQ_MNT"/ "$T"/ &
+RS=$!
+while kill -0 $RS 2>/dev/null; do
+    sleep 5
+    USED=$(df -B1 --output=used "$T" | tail -1)
+    awk -v u="$USED" -v b="$BASE" -v t="$TOTAL" 'BEGIN { p = 0.08 + 0.62 * (u - b) / t; if (p > 0.70) p = 0.70; printf "PROGRESS %.2f copy\n", p }'
+done
+wait $RS || fail copy
+umount "$SQ_MNT"
+mkdir -p "$T/boot/efi"
+mount "${P}2" "$T/boot/efi" || fail mount_target
+
+# --- 4. Yapılandırma ---
+progress 0.72 configure
+for d in dev dev/pts proc sys run; do mount --bind "/$d" "$T/$d"; done
+if [ -d /sys/firmware/efi/efivars ]; then mount --bind /sys/firmware/efi/efivars "$T/sys/firmware/efi/efivars"; fi
+IN() { chroot "$T" "$@"; }
+
+ROOT_UUID=$(blkid -s UUID -o value "${P}3")
+ESP_UUID=$(blkid -s UUID -o value "${P}2")
+cat > "$T/etc/fstab" <<EOF
+# MindOS Paradise (USB/harici disk kurulumu)
+UUID=$ROOT_UUID  /          ext4  noatime,commit=60,errors=remount-ro  0 1
+UUID=$ESP_UUID   /boot/efi  vfat  umask=0077,noatime                   0 2
+EOF
+
+HOST=mindos-usb
+echo "$HOST" > "$T/etc/hostname"
+printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\t\tlocalhost ip6-localhost ip6-loopback\n' "$HOST" > "$T/etc/hosts"
+: > "$T/etc/machine-id"; rm -f "$T/var/lib/dbus/machine-id"
+
+echo "LANG=$LOCALE" > "$T/etc/locale.conf"
+ln -sf "../usr/share/zoneinfo/$TZ_NAME" "$T/etc/localtime"; echo "$TZ_NAME" > "$T/etc/timezone"
+sed -i -E "s/^XKBLAYOUT=.*/XKBLAYOUT=\"$KBD\"/" "$T/etc/default/keyboard"
+
+# Kullanıcı: parola özeti doğrudan /etc/shadow'a yazılır (komut satırında görünmez)
+IN useradd -m -s /bin/bash -c "$USERNAME" "$USERNAME" || fail user
+for g in sudo audio video plugdev netdev lpadmin scanner bluetooth users; do
+    if IN getent group "$g" >/dev/null; then IN usermod -aG "$g" "$USERNAME"; fi
+done
+printf '%s:%s\n' "$USERNAME" "$HASH" | IN chpasswd -e || fail user
+IN passwd -l root >/dev/null
+
+# Canlı sisteme ait paketler ve dosyalar kaldırılır
+# (live-tools, update-initramfs'i canlı ortamda etkisiz bir sarmalayıcıyla değiştirir; kaldırılması şart)
+LIVE_PKGS=$(IN dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'live-*' calamares calamares-settings-debian 2>/dev/null \
+    | awk '$1 == "ii" { print $2 }' | tr '\n' ' ')
+if [ -n "$LIVE_PKGS" ]; then
+    IN apt-get purge -y -q $LIVE_PKGS >/dev/null 2>&1 || fail configure
+fi
+IN dpkg-divert --list 2>/dev/null | grep -q "update-initramfs" && fail configure
+rm -f "$T/etc/xdg/autostart/mindos-install-mode.desktop" "$T/etc/sudoers.d/live"
+rm -rf "$T/etc/live"
+
+cat > "$T/etc/apt/sources.list" <<EOF
+deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
+deb http://security.debian.org/debian-security/ trixie-security main contrib non-free non-free-firmware
+EOF
+
+# --- 5. Önyükleyici: BIOS + UEFI (Secure Boot) ---
+progress 0.82 bootloader
+cat >> "$T/etc/default/grub" <<'EOF'
+
+# Taşınabilir disk: başka bilgisayarlardaki sistemleri menüye ekleme
+GRUB_DISABLE_OS_PROBER=true
+EOF
+# Taşınabilir diskte GRUB güncellemeleri EFI kaydına (NVRAM) yazmaz, çıkarılabilir yolu günceller
+echo "grub-efi-amd64 grub2/force_efi_extra_removable boolean true" | IN debconf-set-selections
+echo "grub-efi-amd64 grub2/update_nvram boolean false" | IN debconf-set-selections
+# grub-efi-amd64 paketi çekirdek güncellemelerinde GRUB'u günceller; internetsiz de kurulsun diye ISO havuzundan
+cp "$ISO_MNT"/pool/main/g/grub2/grub-efi-amd64_*.deb "$ISO_MNT"/pool/main/g/grub2/grub-efi_*.deb "$T/tmp/" 2>/dev/null || true
+IN sh -c 'dpkg -i /tmp/grub-efi-amd64_*.deb /tmp/grub-efi_*.deb >/dev/null 2>&1; rm -f /tmp/grub-efi*.deb' || true
+
+IN grub-install --target=i386-pc "$DEV" >/dev/null 2>&1 || fail bootloader
+IN grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=MindOS \
+    --removable --no-nvram --uefi-secure-boot >/dev/null 2>&1 || fail bootloader
+[ -f "$T/boot/efi/EFI/BOOT/BOOTX64.EFI" ] || fail bootloader
+
+# Secure Boot: her bilgisayarda bir kez MindOS anahtarı kaydedilebilsin diye MokManager girdisi
+mkdir -p "$T/boot/efi/EFI/mindos"
+cp "$T/usr/share/mindos/secureboot/MindOS-SecureBoot.der" "$T/boot/efi/EFI/mindos/MindOS-SecureBoot.cer"
+cat > "$T/etc/grub.d/42_mindos-mok" <<'EOF'
+#!/bin/sh
+cat <<'GRUB'
+if [ "${shim_lock}" = "y" ]; then
+	menuentry "Secure Boot: Enroll MindOS key" {
+		search --no-floppy --set=root --file /EFI/mindos/MindOS-SecureBoot.cer
+		chainloader /EFI/BOOT/mmx64.efi
+	}
+fi
+GRUB
+EOF
+chmod 755 "$T/etc/grub.d/42_mindos-mok"
+
+progress 0.88 initramfs
+STAMP=$WORK/initramfs.stamp; touch "$STAMP"
+IN update-initramfs -u -k all >/dev/null 2>&1 || fail initramfs
+# canlı sistemin initrd'si (live-boot) kalmışsa sistem açılmaz: yenilendiğini doğrula
+for i in "$T"/boot/initrd.img-*; do [ "$i" -nt "$STAMP" ] || fail initramfs; done
+IN update-grub >/dev/null 2>&1 || fail bootloader
+
+# --- 6. Bitiş ---
+progress 0.96 sync
+IN apt-get clean >/dev/null 2>&1 || true
+sync
+progress 1.0 done

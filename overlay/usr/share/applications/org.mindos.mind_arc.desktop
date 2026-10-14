@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Mind-Arc Kontrol Merkezi
+Name[en]=Mind-Arc Control Center
+Comment=MindOS sistem yönetimi, paket merkezi ve bakım araçları
+Comment[en]=MindOS system management, package center and maintenance
+Exec=mind-arc
+Icon=mind-arc
+Terminal=false
+Type=Application
+Categories=System;Settings;Utility;
+Keywords=mindos;mindpkg;paket;package;sistem;system;ayar;settings;
+StartupNotify=true
+StartupWMClass=org.mindos.mind_arc

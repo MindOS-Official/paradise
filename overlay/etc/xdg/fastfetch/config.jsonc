@@ -1,0 +1,48 @@
+{
+    "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+    "logo": {
+        "type": "file",
+        "source": "/etc/xdg/fastfetch/logo.txt",
+        "color": {
+            "1": "38;5;33",
+            "2": "38;5;117"
+        },
+        "padding": {
+            "top": 1,
+            "right": 3
+        }
+    },
+    "display": {
+        "color": {
+            "keys": "38;5;117",
+            "title": "38;5;33"
+        }
+    },
+    "modules": [
+        "title",
+        "separator",
+        {
+            "type": "os",
+            "format": "MindOS Paradise"
+        },
+        "host",
+        "kernel",
+        "uptime",
+        "packages",
+        "shell",
+        "de",
+        "wm",
+        "theme",
+        "icons",
+        "terminal",
+        "cpu",
+        "memory",
+        {
+            "type": "disk",
+            "folders": "/:/home",
+            "format": "{size-used} / {size-total} ({size-percentage})"
+        },
+        "break",
+        "colors"
+    ]
+}

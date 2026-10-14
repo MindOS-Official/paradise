@@ -1,0 +1,2 @@
+[org.gnome.shell]
+enabled-extensions=['arcmenu@arcmenu.com', 'dash-to-dock@micxgx.gmail.com', 'ding@rastersoft.com', 'blur-my-shell@aunetx', 'mindos-tweaks@mindos-official.github.io']

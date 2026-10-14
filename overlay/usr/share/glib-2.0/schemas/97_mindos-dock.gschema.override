@@ -1,0 +1,2 @@
+[org.gnome.shell]
+favorite-apps=['calamares-install-debian.desktop', 'firefox-esr.desktop', 'org.gnome.Nautilus.desktop', 'libreoffice-writer.desktop', 'org.gnome.Terminal.desktop', 'org.mindos.mind_arc.desktop', 'mindhelper.desktop']

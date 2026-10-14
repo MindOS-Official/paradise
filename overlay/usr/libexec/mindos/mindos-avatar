@@ -1,0 +1,22 @@
+#!/bin/sh
+# Avatarı olmayan kullanıcılara MindOS avatarını verir (giriş ekranı, kilit ekranı, menü).
+# GDM ~/.face dosyasını 0700 ev dizininden okuyamaz; avatar AccountsService'in dizinine konur.
+# Kullanıcının kendi dosyası root olarak okunmaz (bağlantı ile başka dosya sızdırılamasın),
+# yalnızca MindOS'un varsayılan avatarı kopyalanır. Ayarlar'dan seçilen avatara dokunulmaz.
+A=/usr/share/mindos/icons/mindos-avatar.png
+D=/var/lib/AccountsService
+[ -f "$A" ] || exit 0
+getent passwd | while IFS=: read -r name _ uid _ _ _ shell; do
+    [ "$uid" -ge 1000 ] 2>/dev/null && [ "$uid" -lt 60000 ] || continue
+    case "$shell" in */nologin|*/false|"") continue ;; esac
+    f="$D/users/$name"
+    [ -f "$f" ] && grep -q '^Icon=' "$f" && continue
+    install -D -m 644 "$A" "$D/icons/$name"
+    install -d -m 700 "$D/users"
+    if [ -f "$f" ] && grep -q '^\[User\]' "$f"; then
+        sed -i "/^\[User\]/a Icon=$D/icons/$name" "$f"
+    else
+        printf '[User]\nIcon=%s\nSystemAccount=false\n' "$D/icons/$name" >> "$f"
+    fi
+done
+exit 0

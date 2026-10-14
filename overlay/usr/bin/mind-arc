@@ -1,0 +1,3 @@
+#!/bin/sh
+# Mind-Arc Kontrol Merkezi başlatıcısı
+exec /usr/bin/python3 /opt/mind-arc/main.py "$@"

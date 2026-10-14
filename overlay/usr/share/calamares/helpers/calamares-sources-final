@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# MindOS Paradise: kurulan sistemin depo listesini yazar ve canlı sisteme özel dosyaları temizler
+#
+
+CHROOT=$(mount | grep proc | grep calamares | awk '{print $3}' | sed -e "s#/proc##g")
+RELEASE="trixie"
+COMPONENTS="main contrib non-free non-free-firmware"
+
+cat << EOF2 > $CHROOT/etc/apt/sources.list
+# See https://wiki.debian.org/SourcesList for more information.
+deb http://deb.debian.org/debian $RELEASE $COMPONENTS
+deb http://deb.debian.org/debian $RELEASE-updates $COMPONENTS
+deb http://security.debian.org/debian-security/ $RELEASE-security $COMPONENTS
+
+# Backports allow you to install newer versions of software made available for this release
+deb http://deb.debian.org/debian $RELEASE-backports $COMPONENTS
+EOF2
+
+# Yalnızca canlı oturumda anlamlı olan dosyalar
+rm -f $CHROOT/etc/xdg/autostart/mindos-install-mode.desktop
+
+exit 0

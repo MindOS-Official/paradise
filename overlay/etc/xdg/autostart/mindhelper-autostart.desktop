@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Mind Helper
+Comment=Mind Helper karşılama bildirimi (yalnızca ilk girişte)
+Exec=/usr/bin/mindhelper --autostart
+Icon=mindhelper
+StartupWMClass=mindhelper
+Terminal=false
+Type=Application
+Categories=Utility;System;
+X-GNOME-Autostart-enabled=true
+StartupNotify=false

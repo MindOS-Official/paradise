@@ -1,0 +1,26 @@
+#!/bin/sh
+# MindOS Paradise: initrd küçültme
+# Büyük GPU sürücüleri ve firmware'leri initrd'de gerekmez: açılış ekranı (plymouth)
+# efifb/vesafb üzerinden çizilir, GPU sürücüsü kök dosya sistemine geçince udev ile yüklenir.
+# Sonuç: çok daha küçük initrd, daha hızlı açılış, açılışta daha az RAM.
+PREREQ="plymouth"
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0 ;; esac
+
+GPU_MODULES="amdgpu amdxcp radeon nouveau i915 kvmgt xe"
+
+# 1) Henüz kopyalanmamış (kuyruktaki) modülleri çıkar - dracut-install kancalardan sonra kopyalıyor
+if [ -n "${__MODULES_TO_ADD}" ] && [ -f "${__MODULES_TO_ADD}" ]; then
+	for m in $GPU_MODULES; do
+		sed -i "/^${m}\$/d" "${__MODULES_TO_ADD}"
+	done
+fi
+
+# 2) Daha önce kopyalanmış olanları sil
+for d in amd radeon nouveau i915 xe; do
+	rm -rf "${DESTDIR}/usr/lib/modules/${version}/kernel/drivers/gpu/drm/${d}"
+done
+for f in amdgpu radeon nvidia i915 xe netronome liquidio; do
+	rm -rf "${DESTDIR}/usr/lib/firmware/${f}"
+done
+exit 0

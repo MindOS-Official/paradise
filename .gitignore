@@ -1,0 +1,19 @@
+# Gizli anahtarlar asla repoya girmez (bkz. SECURITY.md)
+*.key
+*.priv
+*.p12
+id_rsa*
+# Derleme çıktıları ve imajlar
+rootfs/
+iso_root/
+*.iso
+*.img
+*.qcow2
+*.deb
+*.tar.xz
+tests/vm/kernel/
+tests/vm/shots/
+tests/vm/*.sock
+tests/vm/*.fd
+__pycache__/
+*.pyc

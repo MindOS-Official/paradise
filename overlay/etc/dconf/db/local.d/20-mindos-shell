@@ -1,0 +1,34 @@
+# MindOS Paradise masaüstü varsayılanları (kullanıcı ayarları bunların üzerine yazabilir)
+
+[org/gnome/shell/extensions/arcmenu]
+menu-arrow-rise=(true, 0)
+menu-layout='Default'
+menu-button-icon='Custom_Icon'
+custom-menu-button-icon='/usr/share/mindos/icons/mindos-d12.png'
+custom-menu-button-icon-size=26.0
+position-in-panel='Left'
+show-activities-button=false
+arcmenu-hotkey=['Super_L']
+hide-overview-on-startup=true
+update-notifier-enabled=false
+pinned-apps=[{'id': 'firefox-esr.desktop'}, {'id': 'org.gnome.Nautilus.desktop'}, {'id': 'org.gnome.Terminal.desktop'}, {'id': 'org.mindos.mind_arc.desktop'}, {'id': 'mindhelper.desktop'}, {'id': 'libreoffice-writer.desktop'}, {'id': 'org.gnome.Settings.desktop'}]
+
+[org/gnome/shell/extensions/dash-to-dock]
+show-show-apps-button=false
+
+[org/gnome/desktop/interface]
+enable-hot-corners=false
+
+[org/gnome/shell]
+welcome-dialog-last-shown-version='999'
+
+# GNOME Terminal varsayılan profili: fastfetch lotus logosu sığsın diye geniş açılır
+[org/gnome/terminal/legacy/profiles:/:b1dcc9dd-5262-4d8d-a863-c897e6d979b9]
+default-size-columns=110
+default-size-rows=30
+
+# Menü bulanıklaştırması statik modda: yuvarlak köşeli blur, üst çubukla dikiş bırakmaz
+[org/gnome/shell/extensions/blur-my-shell/popup]
+# GNOME 48 dinamik blur köşe yuvarlatamıyor; statik blur yuvarlak köşe efektini kullanır
+blur=true
+static-blur=true

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MindOS Paradise Installer
+Comment=Açılış menüsünden "Install MindOS Paradise" seçildiyse kurulumu başlatır
+Exec=sh -c 'grep -qw mindos.install /proc/cmdline && exec calamares-install-debian'
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3

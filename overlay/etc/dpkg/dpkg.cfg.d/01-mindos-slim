@@ -1,0 +1,19 @@
+# MindOS Paradise: sadece Türkçe + İngilizce çeviri/kılavuz, lisans dosyaları korunur
+path-exclude=/usr/share/doc/*
+path-include=/usr/share/doc/*/copyright
+path-exclude=/usr/share/man/*
+path-include=/usr/share/man/man[1-9]*
+path-include=/usr/share/man/tr*
+path-exclude=/usr/share/locale/*
+path-include=/usr/share/locale/locale.alias
+path-include=/usr/share/locale/tr/*
+path-include=/usr/share/locale/en/*
+path-include=/usr/share/locale/en_US/*
+path-exclude=/usr/share/help/*
+path-include=/usr/share/help/C/*
+path-include=/usr/share/help/tr/*
+path-exclude=/usr/share/info/*
+path-exclude=/usr/share/gnome/help/*
+path-exclude=/usr/share/omf/*
+path-exclude=/usr/share/lintian/*
+path-exclude=/usr/share/linda/*

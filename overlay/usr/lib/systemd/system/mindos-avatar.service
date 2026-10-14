@@ -1,0 +1,11 @@
+[Unit]
+Description=MindOS default user avatars
+Before=accounts-daemon.service display-manager.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/mindos/mindos-avatar
+
+[Install]
+WantedBy=multi-user.target

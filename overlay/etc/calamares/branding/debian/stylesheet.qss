@@ -1,0 +1,193 @@
+/* ===================================================================
+ *  MindOS Paradise - VS Code Solarized Light Theme for Calamares
+ *  Palette:
+ *    base3:  #fdf6e3 (warm canvas)
+ *    base2:  #eee8d5 (sidebar, panel backgrounds)
+ *    base1:  #93a1a1 (subtle borders / disabled)
+ *    base00: #657b83 (body text)
+ *    base01: #586e75 (headings / secondary)
+ *    base02: #073642 (titles / high emphasis)
+ *    blue:   #268bd2 (Solarized blue accent / primary button)
+ *    cyan:   #2aa198 (Solarized cyan / hover accent)
+ *    border: #d3cbb7 (subtle divider)
+ * =================================================================== */
+
+/* Main Window */
+#mainApp {
+    background-color: #fdf6e3;
+    font-family: "Cantarell", "Ubuntu", sans-serif;
+    color: #657b83;
+}
+
+QWidget {
+    color: #657b83;
+}
+
+/* Sidebar */
+#sidebarApp {
+    background-color: #eee8d5;
+    border-right: 1px solid #d3cbb7;
+}
+
+#logoApp {
+    padding: 16px 20px;
+    qproperty-alignment: AlignCenter;
+}
+
+/* Headings */
+QLabel {
+    color: #657b83;
+}
+
+QLabel#viewTitle {
+    font-size: 18pt;
+    font-weight: bold;
+    color: #073642;
+    padding-bottom: 8px;
+}
+
+QLabel#welcomeText {
+    font-size: 11pt;
+    color: #586e75;
+}
+
+/* Requirements & Info Boxes */
+#requirementsWidget, #requirementsList {
+    background-color: #fdf6e3;
+}
+
+/* PushButtons (General: Back, Cancel, About) */
+QPushButton {
+    background-color: #eee8d5;
+    border: 1px solid #d3cbb7;
+    border-radius: 5px;
+    padding: 7px 22px;
+    font-size: 10pt;
+    font-weight: 500;
+    color: #586e75;
+    min-height: 22px;
+}
+
+QPushButton:hover {
+    background-color: #e4ddc8;
+    border-color: #93a1a1;
+    color: #073642;
+}
+
+QPushButton:pressed {
+    background-color: #d3cbb7;
+    color: #073642;
+}
+
+QPushButton:disabled {
+    background-color: #fdf6e3;
+    border-color: #e4ddc8;
+    color: #93a1a1;
+}
+
+/* Primary Action: Next / Install Button */
+QPushButton#nextButton {
+    background-color: #268bd2;
+    color: #fdf6e3;
+    font-weight: bold;
+    border: 1px solid #2075b3;
+    border-radius: 5px;
+}
+
+QPushButton#nextButton:hover {
+    background-color: #2aa198;
+    border-color: #248b83;
+    color: #ffffff;
+}
+
+QPushButton#nextButton:pressed {
+    background-color: #1a6091;
+}
+
+QPushButton#nextButton:disabled {
+    background-color: #eee8d5;
+    border-color: #d3cbb7;
+    color: #93a1a1;
+}
+
+/* Secondary Buttons */
+QPushButton#backButton, QPushButton#cancelButton {
+    background-color: #eee8d5;
+    border: 1px solid #d3cbb7;
+    color: #586e75;
+}
+
+/* Dropdown ComboBoxes */
+QComboBox {
+    background-color: #fdf6e3;
+    border: 1px solid #d3cbb7;
+    border-radius: 5px;
+    padding: 6px 14px;
+    color: #586e75;
+    min-height: 22px;
+}
+
+QComboBox:hover {
+    border-color: #268bd2;
+}
+
+QComboBox:focus {
+    border: 1px solid #268bd2;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #fdf6e3;
+    border: 1px solid #d3cbb7;
+    selection-background-color: #eee8d5;
+    selection-color: #073642;
+    color: #586e75;
+}
+
+/* Line Inputs */
+QLineEdit {
+    background-color: #fdf6e3;
+    border: 1px solid #d3cbb7;
+    border-radius: 5px;
+    padding: 6px 10px;
+    color: #073642;
+}
+
+QLineEdit:focus {
+    border: 1px solid #268bd2;
+}
+
+/* Progress Bar */
+QProgressBar {
+    background-color: #eee8d5;
+    border: 1px solid #d3cbb7;
+    border-radius: 4px;
+    height: 10px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #2aa198;
+    border-radius: 3px;
+}
+
+/* ScrollBars */
+QScrollBar:vertical {
+    background: #fdf6e3;
+    width: 10px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #d3cbb7;
+    min-height: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #93a1a1;
+}

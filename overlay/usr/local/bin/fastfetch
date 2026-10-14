@@ -1,0 +1,3 @@
+#!/bin/sh
+# MindOS: fastfetch varsayılan olarak MindOS yapılandırması ve lotus logosuyla çalışır
+exec /usr/bin/fastfetch -c /etc/xdg/fastfetch/config.jsonc "$@"

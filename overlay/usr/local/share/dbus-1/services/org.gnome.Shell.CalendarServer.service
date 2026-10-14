@@ -1,0 +1,5 @@
+[D-BUS Service]
+# MindOS: üst çubuk takvim etkinlikleri kapalı; Evolution veri sunucusu (~115 MB) girişte
+# başlamaz, yalnızca Takvim/Kişiler açılınca çalışır.
+Name=org.gnome.Shell.CalendarServer
+Exec=/bin/false

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Spice vdagent
+Comment=Agent for Spice guests
+Exec=sh -c "[ -e /dev/virtio-ports/com.redhat.spice.0 ] && exec /usr/bin/spice-vdagent"
+Terminal=false
+Type=Application
+Categories=
+X-GNOME-Autostart-Phase=WindowManager
+NoDisplay=true

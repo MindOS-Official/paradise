@@ -1,0 +1,321 @@
+/* ===================================================================
+ * Mind Helper — Material You / Google Pixel & Gemini Design System
+ * Inspired by Google Pixel Tips & Celestial Intelligence
+ * =================================================================== */
+
+window {
+    background-color: #070b13;
+    color: #f1f5f9;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Main Container */
+.main-window-box {
+    background: #070b13;
+}
+
+/* Typography */
+.brand-title {
+    font-size: 21px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.02em;
+}
+
+.brand-subtitle {
+    font-size: 12px;
+    color: #94a3b8;
+    letter-spacing: 0.01em;
+}
+
+/* Status Badges */
+.telemetry-pill {
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #38bdf8;
+}
+
+.uptime-badge {
+    background: rgba(45, 212, 191, 0.12);
+    border: 1px solid rgba(45, 212, 191, 0.35);
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #2dd4bf;
+}
+
+.weather-badge {
+    background: rgba(129, 140, 248, 0.12);
+    border: 1px solid rgba(129, 140, 248, 0.35);
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #a5b4fc;
+}
+
+/* Pixel Segmented Tab Navigation */
+notebook {
+    background: transparent;
+    border: none;
+}
+
+notebook header {
+    background: transparent;
+    border: none;
+    padding: 6px 16px 2px 16px;
+}
+
+notebook tab {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
+    margin: 4px 6px;
+    padding: 8px 22px;
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 13px;
+    transition: all 200ms ease;
+}
+
+notebook tab:hover {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.3);
+    color: #f8fafc;
+}
+
+notebook tab:checked {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #38bdf8);
+    border: none;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+/* Pixel Discovery Cards */
+.discovery-card {
+    background: rgba(17, 24, 39, 0.72);
+    border: 1px solid rgba(56, 189, 248, 0.18);
+    border-radius: 16px;
+    padding: 12px 14px;
+    transition: all 180ms ease;
+}
+
+.discovery-card:hover {
+    background: rgba(28, 40, 68, 0.9);
+    border-color: rgba(56, 189, 248, 0.55);
+}
+
+.discovery-icon {
+    font-size: 22px;
+    margin-bottom: 2px;
+}
+
+.discovery-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.discovery-desc {
+    font-size: 10.5px;
+    color: #94a3b8;
+}
+
+/* Sentinel Transmission / Chilling Quote Box */
+.chilling-quote-box {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-left: 3.5px solid #38bdf8;
+    border-radius: 14px;
+    padding: 12px 18px;
+}
+
+/* Prompt Search Capsule */
+.prompt-entry {
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    border-radius: 9999px;
+    padding: 11px 22px;
+    color: #f8fafc;
+    font-size: 13.5px;
+}
+
+.prompt-entry:focus {
+    border: 1.5px solid #38bdf8;
+    background: rgba(15, 23, 42, 0.98);
+}
+
+/* Buttons */
+.btn-gemini-sparkle {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #38bdf8);
+    color: #ffffff;
+    font-weight: 700;
+    border: none;
+    border-radius: 9999px;
+    padding: 10px 24px;
+    transition: all 150ms ease;
+}
+
+.btn-gemini-sparkle:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0ea5e9, stop:1 #7dd3fc);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    color: #94a3b8;
+    padding: 7px 16px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.btn-secondary:hover {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: rgba(56, 189, 248, 0.35);
+    color: #f8fafc;
+}
+
+/* Chat History & Bubbles */
+.chat-scroll-area {
+    background: transparent;
+    border: none;
+}
+
+.user-bubble {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1d4ed8, stop:1 #2563eb);
+    color: #ffffff;
+    border-radius: 20px 20px 4px 20px;
+    padding: 12px 20px;
+    font-size: 13.5px;
+    margin: 4px 0;
+}
+
+.ai-bubble {
+    background: rgba(17, 24, 39, 0.88);
+    border: 1px solid rgba(56, 189, 248, 0.22);
+    border-radius: 20px 20px 20px 4px;
+    padding: 14px 22px;
+    color: #e2e8f0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin: 4px 0;
+}
+
+/* Tutorial Cards */
+.tutorial-item-card {
+    background: rgba(17, 24, 39, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin: 3px 0;
+}
+
+.tutorial-item-card:hover {
+    background: rgba(30, 41, 59, 0.85);
+    border-color: rgba(56, 189, 248, 0.35);
+}
+
+.tutorial-category {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #38bdf8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.tutorial-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #f8fafc;
+}
+
+.tutorial-time {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+/* Feedback Cards */
+.feedback-card {
+    background: rgba(17, 24, 39, 0.75);
+    border: 1px solid rgba(56, 189, 248, 0.18);
+    border-radius: 16px;
+    padding: 18px 22px;
+}
+
+.ready-alert {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 14px;
+    padding: 14px 18px;
+}
+
+.cooldown-alert {
+    background: rgba(244, 63, 94, 0.1);
+    border: 1px solid rgba(244, 63, 94, 0.3);
+    border-radius: 14px;
+    padding: 14px 18px;
+}
+
+/* Minimized Corner Dock Pill */
+.corner-dock-window {
+    background: transparent;
+}
+
+.dock-pill-frame {
+    background: rgba(11, 17, 30, 0.94);
+    border: 1.5px solid rgba(56, 189, 248, 0.4);
+    border-radius: 9999px;
+    padding: 8px 16px;
+}
+
+.dock-pill-frame:hover {
+    background: rgba(18, 27, 48, 0.98);
+    border-color: #38bdf8;
+}
+
+.flyout-drawer-window {
+    background: rgba(9, 14, 26, 0.96);
+    border: 1.5px solid rgba(56, 189, 248, 0.35);
+    border-radius: 24px;
+    padding: 16px;
+}
+
+.stat-box {
+    background: rgba(17, 24, 39, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 12px 14px;
+}
+
+.stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+}
+
+.stat-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: #38bdf8;
+}
+
+/* Minimalist Scrollbar */
+scrollbar {
+    background: transparent;
+}
+
+scrollbar slider {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    min-width: 6px;
+}
+
+scrollbar slider:hover {
+    background: rgba(56, 189, 248, 0.5);
+}

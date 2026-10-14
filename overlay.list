@@ -1,0 +1,107 @@
+# MindOS Paradise'ın Debian'a eklediği / değiştirdiği sistem dosyaları (imaj köküne göre yollar).
+# scripts/export-from-build.sh bu listeyi imajdan overlay/ klasörüne kopyalar,
+# scripts/apply-overlay.sh overlay/'ı bir Debian köküne uygular. Joker (*) kullanılabilir.
+
+# --- Paket yönetimi ve güncellemeler
+etc/apt/sources.list
+etc/apt/apt.conf.d/20auto-upgrades
+etc/apt/apt.conf.d/50unattended-upgrades
+etc/systemd/system/apt-daily.service.d/10-not-on-live.conf
+etc/systemd/system/apt-daily-upgrade.service.d/10-not-on-live.conf
+etc/systemd/system/unattended-upgrades.service.d/10-not-on-live.conf
+etc/dpkg/dpkg.cfg.d/01-mindos-slim
+etc/mindpkg/mindpkg.conf
+etc/mindos-release
+usr/share/bash-completion/completions/mindpkg
+usr/lib/systemd/system/mindos-system-update.service
+usr/lib/systemd/system/system-update.target.wants/mindos-system-update.service
+
+# --- Kimlik ve markalama
+usr/lib/os-release
+etc/issue
+etc/issue.net
+etc/default/grub
+etc/skel/.face
+usr/share/mindos
+usr/share/backgrounds/mindos-wallpaper.jpg
+usr/share/backgrounds/mindos-grub-1080.jpg
+usr/share/backgrounds/mindos-grub.png
+usr/share/icons/hicolor/256x256/apps/mindos-logo.png
+usr/share/icons/hicolor/*/apps/mind-arc.png
+usr/share/icons/hicolor/*/apps/mindhelper.png
+usr/share/pixmaps/mindhelper.png
+usr/share/desktop-base/debian-logos/logo-text-version-*.png
+usr/share/pixmaps/debian-logo.png
+usr/share/pixmaps/install-debian.png
+etc/xdg/fastfetch/config.jsonc
+etc/xdg/fastfetch/logo.txt
+etc/profile.d/fastfetch.sh
+etc/bash.bashrc
+usr/local/bin/fastfetch
+usr/local/bin/neofetch
+
+# --- Açılış ekranı (Plymouth)
+etc/plymouth/plymouthd.conf
+usr/share/plymouth/themes/mindos
+usr/share/plymouth/themes/mindos-update-tr
+usr/share/plymouth/themes/mindos-update-en
+usr/share/plymouth/themes/spinner/spinner.plymouth
+usr/share/plymouth/themes/spinner/bgrt-fallback.png
+usr/share/plymouth/themes/spinner/watermark.png
+
+# --- Masaüstü (GNOME) varsayılanları
+etc/dconf/profile/user
+etc/dconf/db/local.d/20-mindos-shell
+usr/share/glib-2.0/schemas/90-mindos-wallpaper.gschema.override
+usr/share/glib-2.0/schemas/91-mindos-extensions.gschema.override
+usr/share/glib-2.0/schemas/92-mindos-performance.gschema.override
+usr/share/glib-2.0/schemas/97_mindos-dock.gschema.override
+usr/share/glib-2.0/schemas/99_mindos-mutter.gschema.override
+usr/local/share/dbus-1/services/org.gnome.Shell.CalendarServer.service
+etc/systemd/user/org.gnome.SettingsDaemon.Sharing.service
+etc/systemd/user/org.gnome.SettingsDaemon.Smartcard.service
+etc/systemd/user/org.gnome.SettingsDaemon.UsbProtection.service
+etc/systemd/user/org.gnome.SettingsDaemon.Wwan.service
+etc/systemd/user/localsearch-3.service
+etc/systemd/user/localsearch-control-3.service
+etc/systemd/user/localsearch-writeback-3.service
+etc/xdg/autostart/mindhelper-autostart.desktop
+etc/xdg/autostart/mindos-install-mode.desktop
+etc/xdg/autostart/calamares-desktop-icon.desktop
+etc/xdg/autostart/im-launch.desktop
+etc/xdg/autostart/org.gnome.Evolution-alarm-notify.desktop
+etc/xdg/autostart/spice-vdagent.desktop
+usr/share/applications/org.mindos.mind_arc.desktop
+usr/share/applications/mindhelper.desktop
+usr/bin/mind-arc
+usr/bin/mindhelper
+usr/bin/mindbot
+usr/libexec/mindos/mindos-avatar
+usr/lib/systemd/system/mindos-avatar.service
+usr/lib/systemd/system/multi-user.target.wants/mindos-avatar.service
+
+# --- Güvenlik, bellek ve performans
+etc/sysctl.d/80-mindos-hardening.conf
+etc/sysctl.d/90-mindos-memory.conf
+etc/nftables.conf
+etc/systemd/journald.conf.d/90-mindos.conf
+etc/systemd/zram-generator.conf
+etc/tmpfiles.d/mindos-zswap-off.conf
+etc/initramfs-tools/hooks/zz-mindos-slim
+etc/initramfs-tools/hooks/mindos-efivarfs
+
+# --- Firefox
+etc/firefox/policies/policies.json
+etc/firefox-esr/policies/policies.json
+usr/share/firefox-esr/distribution/policies.json
+
+# --- Canlı sistem ve kurulum (Calamares)
+etc/live/config.conf.d/10-mindos.conf
+etc/locale.conf
+etc/calamares/branding/debian
+etc/calamares/modules/locale.conf
+etc/calamares/modules/partition.conf
+etc/calamares/modules/packages.conf
+etc/calamares/modules/users.conf
+usr/share/calamares/helpers/calamares-sources-final
+usr/share/applications/calamares-install-debian.desktop

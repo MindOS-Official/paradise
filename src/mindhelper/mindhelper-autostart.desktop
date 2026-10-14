@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Mind Helper Sentinel
+Comment=Mind Helper System Awakening & Background Sentinel
+Exec=/usr/bin/mindhelper --autostart
+Icon=mindhelper
+StartupWMClass=mindhelper
+Terminal=false
+Type=Application
+Categories=Utility;System;
+X-GNOME-Autostart-enabled=true
+StartupNotify=false

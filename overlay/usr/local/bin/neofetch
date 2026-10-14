@@ -1,0 +1,5 @@
+#!/bin/sh
+# MindOS: neofetch varsayılan olarak MindOS lotus logosunu gösterir
+# (kullanıcının verdiği parametreler sonradan okunduğu için bunları geçersiz kılabilir)
+exec /usr/bin/neofetch --ascii /usr/share/mindos/ascii/lotus-neofetch.txt \
+    --ascii_colors 33 117 --colors 33 117 7 33 117 7 "$@"

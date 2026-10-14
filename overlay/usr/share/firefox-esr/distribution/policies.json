@@ -1,0 +1,13 @@
+{
+  "policies": {
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DisableDefaultBrowserAgent": true,
+    "DontCheckDefaultBrowser": true,
+    "DNSOverHTTPS": { "Enabled": false, "Locked": false },
+    "EnableTrackingProtection": { "Value": true, "Cryptomining": true, "Fingerprinting": true, "EmailTracking": true },
+    "HttpsOnlyMode": "enabled",
+    "UserMessaging": { "ExtensionRecommendations": false, "FeatureRecommendations": false, "SkipOnboarding": true, "MoreFromMozilla": false },
+    "Homepage": { "URL": "https://mindos-official.github.io/mindos_/", "StartPage": "homepage" }
+  }
+}

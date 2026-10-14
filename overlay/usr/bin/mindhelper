@@ -1,0 +1,8 @@
+#!/bin/bash
+# Mind Helper System Launcher
+if [ -d "/usr/share/mindhelper" ]; then
+    exec -a mindhelper /usr/bin/python3 /usr/share/mindhelper/main.py "$@"
+else
+    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    exec /usr/bin/python3 "$DIR/main.py" "$@"
+fi

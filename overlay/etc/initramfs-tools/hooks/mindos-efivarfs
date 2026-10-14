@@ -1,0 +1,9 @@
+#!/bin/sh
+# MindOS: efivarfs her zaman initramfs'e girsin. Debian'ın mdadm kancası onu yalnızca
+# /sys/firmware/efi varken ekliyor; ISO'nun initramfs'i chroot'ta (EFI olmadan) üretildiği
+# için canlı sistemde UEFI değişkenlerine (Secure Boot durumu, efibootmgr) erişilemiyordu.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0 ;; esac
+. /usr/share/initramfs-tools/hook-functions
+force_load efivarfs || true

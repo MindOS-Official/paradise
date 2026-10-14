@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Mind Helper
+GenericName=Linux Intelligence & Companion
+Comment=MindOS Synthetic Sentinel & Linux Intelligence Tutor
+Exec=/usr/bin/mindhelper
+Icon=mindhelper
+StartupWMClass=mindhelper
+Terminal=false
+Type=Application
+Categories=Utility;System;Development;Education;
+StartupNotify=true
+Keywords=Linux;Helper;AI;Tutorial;Terminal;Gemini;

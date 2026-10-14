@@ -1,0 +1,7 @@
+{
+  "uuid": "mindos-tweaks@mindos-official.github.io",
+  "name": "MindOS Tweaks",
+  "description": "MindOS Paradise görünüm düzeltmeleri: üst çubuk menüleri çubuğa boşluksuz oturur.",
+  "shell-version": ["48"],
+  "url": "https://github.com/MindOS-Official"
+}
