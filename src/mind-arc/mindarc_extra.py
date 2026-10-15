@@ -183,6 +183,13 @@ TEXTS = {
                         "The driver will be downloaded and installed (a few hundred MB). If Secure Boot is on, "
                         "you will enter a one-time code on a blue screen at the next restart; the code is shown "
                         "in the installation output."),
+    "bc_title": ("Broadcom Wi-Fi", "Broadcom Wi-Fi"),
+    "bc_need": ("Bu Wi-Fi kartı için Broadcom sürücüsü (wl) gerekiyor. Kurulum için internet gerekir: "
+                "kablo ya da telefonla USB internet paylaşımı kullanın.",
+                "This Wi-Fi card needs the Broadcom driver (wl). Installation needs internet: use a cable "
+                "or USB tethering from your phone."),
+    "bc_ok": ("Wi-Fi kartı çalışıyor ({drv})", "Wi-Fi card is working ({drv})"),
+    "bc_install": ("Wi-Fi Sürücüsünü Kur", "Install Wi-Fi Driver"),
     "u_prepare_fail": ("Güncelleme hazırlanamadı; ayrıntılar aşağıda.", "The update could not be prepared; see details below."),
     "thumbs_done": ("{n} küçük resim silindi", "{n} thumbnails deleted"),
 }
@@ -1002,6 +1009,69 @@ class NvidiaGroup:
         self.output.run(["pkexec", MINDPKG, "install", "nvidia"], done, self.texts.t("nv_install"))
 
 
+
+def broadcom_cards():
+    """[(ad, kullanılan sürücü|None)] Broadcom Wi-Fi kartları"""
+    try:
+        out = subprocess.run(["lspci", "-nnk", "-d", "14e4:"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return []
+    cards = []
+    for line in out.splitlines():
+        if not line.startswith(("\t", " ")):
+            if re.search(r"\[028[0-9]\]", line):
+                name = re.sub(r"^.*?\]: (Broadcom Inc\. and subsidiaries )?", "", line)
+                cards.append([re.sub(r" \[14e4:.*$", "", name), None])
+        elif cards and "Kernel driver in use:" in line:
+            cards[-1][1] = line.split(":", 1)[1].strip()
+    return cards
+
+
+class BroadcomGroup:
+    """Donanım sayfasında, sürücüsü olmayan Broadcom Wi-Fi kartları için tek tıkla 'wl' kurulumu"""
+
+    def __init__(self, win, texts, output):
+        self.win, self.texts, self.output = win, texts, output
+        self.group = Adw.PreferencesGroup(visible=False)
+        texts.bind(self.group.set_title, "bc_title")
+        self.row = Adw.ActionRow()
+        self.row.add_prefix(Gtk.Label(label="📶"))
+        self.row.set_subtitle_lines(3)
+        self.button = Gtk.Button(valign=Gtk.Align.CENTER, visible=False)
+        self.button.add_css_class("suggested-action")
+        self.button.connect("clicked", lambda b: self.install())
+        self.row.add_suffix(self.button)
+        self.group.add(self.row)
+        threading.Thread(target=lambda: GLib.idle_add(self.show, broadcom_cards()), daemon=True).start()
+
+    def show(self, cards):
+        self.cards = cards
+        self.refresh()
+        return False
+
+    def refresh(self):
+        if not getattr(self, "cards", None):
+            return
+        t = self.texts.t
+        name, drv = self.cards[0]
+        self.group.set_visible(True)
+        self.row.set_title(GLib.markup_escape_text(name))
+        need = drv is None and not os.path.exists("/run/live/medium")
+        self.row.set_subtitle(t("bc_ok", drv=drv) if drv else t("bc_need") if need else t("nv_live"))
+        self.button.set_visible(need)
+        self.button.set_label(t("bc_install"))
+
+    def install(self):
+        self.button.set_sensitive(False)
+
+        def done(rc):
+            self.button.set_sensitive(True)
+            self.cards = broadcom_cards()
+            self.refresh()
+
+        self.output.run(["pkexec", MINDPKG, "install", "broadcom"], done, self.texts.t("bc_install"))
+
+
 def build_extra_pages(win):
     """Ana pencereye Paket Merkezi ve Sistem Bakımı sayfalarını ekler"""
     win.extra_texts = ExtraTexts(win)
@@ -1014,6 +1084,8 @@ def build_extra_pages(win):
     if hasattr(win, "page_hardware"):  # Donanım → NVIDIA (yalnızca NVIDIA kartı varsa görünür)
         win.extra_nvidia = NvidiaGroup(win, win.extra_texts)
         win.page_hardware.add(win.extra_nvidia.group)
+        win.extra_broadcom = BroadcomGroup(win, win.extra_texts, win.extra_nvidia.output)
+        win.page_hardware.add(win.extra_broadcom.group)
         win.page_hardware.add(win.extra_nvidia.output.group)
     if mindos_prefs and hasattr(win, "page_appearance"):  # Genel Ayarlar → Gizlilik
         win.page_appearance.add(build_privacy_group(win.extra_texts))
@@ -1032,3 +1104,4 @@ def update_extra_texts(win):
         win.extra_updates.refresh()
         if hasattr(win, "extra_nvidia"):
             win.extra_nvidia.refresh()
+            win.extra_broadcom.refresh()

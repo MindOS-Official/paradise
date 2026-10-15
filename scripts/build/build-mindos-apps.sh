@@ -34,6 +34,7 @@ FILES=(
   usr/lib/systemd/user/timers.target.wants/mindos-update-notify.timer
   usr/libexec/mindos/xkb-remove-variants
   etc/apt/apt.conf.d/80mindos-xkb
+  usr/lib/systemd/system-sleep/mindos-touchpad
 )
 mkdir -p "$P/DEBIAN"
 for f in "${FILES[@]}"; do

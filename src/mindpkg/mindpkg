@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -689,6 +689,79 @@ def install_nvidia():
               f"  'Enroll MOK' → 'Continue' → 'Yes' seçin ve şu kodu girin: {COLOR_BOLD}{code}{COLOR_RESET}\n"
               f"  Ardından 'Reboot'. Bu bir kez yapılır; NVIDIA modülünün imzası böylece tanınır.")
 
+
+# ------------------------------------------------------------------------------
+# Broadcom Wi-Fi (mindpkg install broadcom)
+#   Kernel'in kendi sürücüsü (brcmfmac, brcmsmac, b43, bcma) kartı çalıştırıyorsa hiçbir şey yapılmaz.
+#   Çalıştırmıyorsa Broadcom'un "wl" sürücüsü kurulur: Debian'ın broadcom-sta-dkms paketi kernel 7.x
+#   için yamalanıp MindOS sistem bileşeni olarak yayınlanır (Debian'ınki 7.x'te derlenmiyor).
+# ------------------------------------------------------------------------------
+BROADCOM_GRUB = "/etc/default/grub.d/mindos-broadcom-wl.cfg"
+
+
+def broadcom_wifi():
+    """[(aygıt satırı, kullanılan sürücü|None)] Broadcom ağ denetleyicileri"""
+    out = subprocess.run(["lspci", "-nnk", "-d", "14e4:"], capture_output=True, text=True).stdout
+    cards, cur = [], None
+    for line in out.splitlines():
+        if not line.startswith(("\t", " ")):
+            cur = [line, None] if re.search(r"\[028[0-9]\]", line) else None
+            if cur:
+                cards.append(cur)
+        elif cur and "Kernel driver in use:" in line:
+            cur[1] = line.split(":", 1)[1].strip()
+    return [tuple(c) for c in cards]
+
+
+def install_broadcom():
+    check_root()
+    if not (shutil.which("apt-get") and is_mindos_paradise()):
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} Broadcom kurulumu yalnızca MindOS Paradise'ta desteklenir.")
+        sys.exit(1)
+    if is_live_session():
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} Canlı oturumda sürücü kurulamaz; önce MindOS'u diske kurun.")
+        sys.exit(1)
+    if kernel_flavor() == "debian":
+        print(f"{COLOR_YELLOW}Bu bilgisayar Debian kernel'ini kullanıyor; Debian'ın broadcom-sta-dkms paketi kuruluyor.{COLOR_RESET}")
+        ensure_debian_nonfree()
+        subprocess.run(["apt-get", "update", "-qq"], check=False)
+        sys.exit(subprocess.run(["apt-get", "install", "-y", *APT_OPTS, "linux-headers-amd64",
+                                 "broadcom-sta-dkms"], env={**os.environ, **APT_ENV}).returncode)
+    cards = broadcom_wifi()
+    if not cards:
+        print(f"{COLOR_YELLOW}Bu bilgisayarda Broadcom Wi-Fi kartı bulunamadı.{COLOR_RESET}")
+        return
+    for line, drv in cards:
+        print(f"  • {line.split(': ', 1)[-1]}  (sürücü: {drv or 'yok'})")
+    if all(drv and drv != "wl" for _, drv in cards):
+        print(f"{COLOR_GREEN}✓ Kartınız kernel'in kendi sürücüsüyle ({', '.join(d for _, d in cards)}) çalışıyor; "
+              f"ek sürücü gerekmiyor.{COLOR_RESET}")
+        return
+    install_system_component("linux-headers")
+    install_system_component("broadcom-sta-dkms")
+    # Broadcom'un hazır derlenmiş parçası Intel IBT'ye (dolaylı atlama koruması, 11. nesil ve sonrası)
+    # hazır değil; bu işlemcilerde IBT yalnızca uyarı moduna alınır, yoksa sürücü çöker
+    try:
+        ibt_cpu = " ibt" in next(l for l in open("/proc/cpuinfo") if l.startswith("flags"))
+    except (OSError, StopIteration):
+        ibt_cpu = False
+    if ibt_cpu and not os.path.exists(BROADCOM_GRUB):
+        Path(BROADCOM_GRUB).parent.mkdir(parents=True, exist_ok=True)
+        Path(BROADCOM_GRUB).write_text(
+            '# MindOS: Broadcom wl sürücüsü Intel IBT ile çalışmaz; IBT uyarı modunda (mindpkg install broadcom)\n'
+            'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT ibt=warn"\n', encoding="utf-8")
+        subprocess.run(["update-grub"], check=False)
+    code = queue_dkms_key_enrollment()
+    loaded = subprocess.run(["modprobe", "wl"], capture_output=True).returncode == 0 and not ibt_cpu and not code
+    if loaded:
+        print(f"\n{COLOR_GREEN}✓ Broadcom Wi-Fi sürücüsü (wl) kuruldu ve yüklendi; ağlar birkaç saniye içinde görünür.{COLOR_RESET}")
+    else:
+        print(f"\n{COLOR_GREEN}✓ Broadcom Wi-Fi sürücüsü (wl) kuruldu.{COLOR_RESET} Etkinleşmesi için bilgisayarı yeniden başlatın.")
+    if code:
+        print(f"\n{COLOR_BOLD}Secure Boot açık:{COLOR_RESET} yeniden başlarken mavi bir ekran (MOK Manager) gelecek.\n"
+              f"  'Enroll MOK' → 'Continue' → 'Yes' seçin ve şu kodu girin: {COLOR_BOLD}{code}{COLOR_RESET}\n"
+              f"  Ardından 'Reboot'. Bu bir kez yapılır.")
+
 _index_cache = None
 
 
@@ -783,6 +856,9 @@ def install_from_repo_or_name(pkg_name):
     require_pkg_name(pkg_name)
     if pkg_name in ("nvidia", "nvidia-driver-mindos", "nvidia-driver") and is_mindos_paradise():
         install_nvidia()
+        return
+    if pkg_name in ("broadcom", "broadcom-wl", "broadcom-sta", "broadcom-sta-dkms", "wl") and is_mindos_paradise():
+        install_broadcom()
         return
     if install_system_component(pkg_name):
         return

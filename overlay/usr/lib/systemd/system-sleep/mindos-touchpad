@@ -1,0 +1,19 @@
+#!/bin/sh
+# MindOS: uykudan dönüşte Synaptics touchpad'i yeniden başlatır.
+# HP EliteBook/ZBook/ProBook'larda (ör. EliteBook 840 G1) touchpad SMBus (InterTouch) üzerinden çalışır ve
+# uykudan sonra yeniden bağlanmaz; yalnızca TrackPoint çalışır. psmouse (ve rmi_smbus) yeniden yüklenir.
+# /etc/mindos/touchpad-resume-fix: "1" her bilgisayarda uygular, "0" kapatır; dosya yoksa yalnızca HP iş dizüstüleri.
+[ "$1" = post ] || exit 0
+setting=$(cat /etc/mindos/touchpad-resume-fix 2>/dev/null)
+[ "$setting" = 0 ] && exit 0
+if [ "$setting" != 1 ]; then
+    vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)
+    product=$(cat /sys/class/dmi/id/product_name 2>/dev/null)
+    case "$vendor" in Hewlett-Packard*|HP*) ;; *) exit 0 ;; esac
+    case "$product" in *EliteBook*|*ZBook*|*ProBook*) ;; *) exit 0 ;; esac
+fi
+grep -q '^psmouse ' /proc/modules || exit 0
+logger -t mindos-touchpad "uykudan dönüş: touchpad yeniden başlatılıyor"
+grep -q '^rmi_smbus ' /proc/modules && modprobe -r rmi_smbus
+modprobe -r psmouse && modprobe psmouse
+exit 0
