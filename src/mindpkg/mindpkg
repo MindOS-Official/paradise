@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.8.2"
+VERSION = "1.8.3"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -713,6 +713,63 @@ def broadcom_wifi():
     return [tuple(c) for c in cards]
 
 
+BROADCOM_LOG = "/var/log/mindos-broadcom.log"
+
+
+def ensure_broadcom_module():
+    """wl.ko çalışan kernel için derlenmiş ve kurulmuş olmalı. Yoksa DKMS derlemesini baştan yapar;
+    olmazsa nedenini ekrana ve /var/log/mindos-broadcom.log dosyasına yazar. True: modül hazır."""
+    rel = os.environ.get("MINDPKG_KERNEL") or os.uname().release
+
+    def have():
+        return subprocess.run(["modinfo", "-k", rel, "wl"], capture_output=True).returncode == 0
+
+    if have():
+        return True
+    print(f"{COLOR_YELLOW}wl modülü {rel} için henüz yok; derleniyor...{COLOR_RESET}")
+    log = [f"kernel: {rel}\n"]
+    env = {**os.environ, **APT_ENV}
+    def run(cmd, **kw):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, **kw)
+            return r.returncode, r.stdout + r.stderr
+        except OSError as e:  # komut yok (ör. dkms henüz kurulu değil)
+            return 127, f"{cmd[0]}: {e}\n"
+
+    # Paket "açılmış ama yapılandırılmamış" yarım durumdaysa (bağımlılık kurulamadığında) apt başka paket
+    # kurmayı reddeder; önce yarım kalan kurulum tamamlanır, sonra derleme araçları kesin kurulur
+    for cmd in (["dpkg", "--configure", "-a"], ["apt-get", "install", "-f", "-y", *APT_OPTS],
+                ["apt-get", "install", "-y", *APT_OPTS, "dkms", "build-essential"]):
+        rc, out = run(cmd, env=env)
+        log.append(f"== {' '.join(cmd[:3])} (çıkış {rc})\n{out[-1500:]}")
+    srcs = sorted(Path("/usr/src").glob("broadcom-sta-*"))
+    ver = srcs[-1].name.split("broadcom-sta-", 1)[1] if srcs else None
+    if not ver:
+        log.append("HATA: /usr/src/broadcom-sta-* yok (paket kurulmamış)\n")
+    elif not Path(f"/lib/modules/{rel}/build").exists():
+        log.append(f"HATA: /lib/modules/{rel}/build yok (kernel başlıkları kurulu değil)\n")
+    else:
+        run(["dkms", "add", f"broadcom-sta/{ver}"])  # kayıtlıysa zararsız
+        rc, out = run(["dkms", "install", f"broadcom-sta/{ver}", "-k", rel, "--force"])
+        log.append(f"== dkms install (çıkış {rc})\n{out[-3000:]}")
+        mk = Path(f"/var/lib/dkms/broadcom-sta/{ver}/build/make.log")
+        if rc != 0 and mk.exists():
+            tail = "".join(mk.read_text(errors="replace").splitlines(keepends=True)[-40:])
+            log.append("== make.log (son satırlar)\n" + tail)
+        run(["depmod", "-a", rel])
+    ok = have()
+    try:
+        Path(BROADCOM_LOG).write_text("".join(log), encoding="utf-8")
+    except OSError:
+        pass
+    if not ok:
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} Broadcom sürücüsü derlenemedi. Ayrıntılar: {BROADCOM_LOG}")
+        shown = [l for l in "".join(log).splitlines() if re.search(r"error|HATA|fatal|Error", l)][:6]
+        for l in shown:
+            print(f"  {l[:150]}")
+    return ok
+
+
 def install_broadcom():
     check_root()
     if not (shutil.which("apt-get") and is_mindos_paradise()):
@@ -739,6 +796,8 @@ def install_broadcom():
         return
     install_system_component("linux-headers")
     install_system_component("broadcom-sta-dkms")
+    if not ensure_broadcom_module():
+        sys.exit(1)
     # Broadcom'un hazır derlenmiş parçası Intel IBT'ye (dolaylı atlama koruması, 11. nesil ve sonrası)
     # hazır değil; bu işlemcilerde IBT yalnızca uyarı moduna alınır, yoksa sürücü çöker
     try:
