@@ -88,6 +88,7 @@ usr/libexec/mindos/xkb-remove-variants
 etc/apt/apt.conf.d/80mindos-xkb
 usr/lib/systemd/system-sleep/mindos-touchpad
 etc/default/grub.d/10-mindos-osprober.cfg
+usr/libexec/mindos/fix-boot-order
 
 # --- Güvenlik, bellek ve performans
 etc/sysctl.d/80-mindos-hardening.conf

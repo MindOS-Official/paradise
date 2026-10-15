@@ -32,3 +32,7 @@ default-size-rows=30
 # GNOME 48 dinamik blur köşe yuvarlatamıyor; statik blur yuvarlak köşe efektini kullanır
 blur=true
 static-blur=true
+
+# Pencere düğmeleri: alta alma, tam ekran ve kapatma (GNOME varsayılanı yalnızca kapatma)
+[org/gnome/desktop/wm/preferences]
+button-layout='appmenu:minimize,maximize,close'

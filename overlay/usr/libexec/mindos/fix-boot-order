@@ -1,0 +1,191 @@
+#!/usr/bin/python3
+"""MindOS: UEFI açılış kaydını düzeltir.
+
+Bozuk bir önceki kurulumdan kalan UEFI kaydı sırada MindOS'un önündeyse bilgisayar "grub rescue"ya düşer.
+Bu betik kurulu MindOS'un açılış kaydını bulur (yoksa oluşturur), MindOS'a ait olup bozulmuş kayıtları siler
+ve gerekiyorsa MindOS'u sıranın başına alır.
+
+Başka işletim sistemlerine (Windows Boot Manager vb.), USB'ye ve donanım yazılımının kendi kayıtlarına dokunulmaz.
+Silinen kayıtlar yalnızca etiketi "debian" ya da "MindOS..." olan ve gösterdiği bölüm artık yok ya da gösterdiği
+dosya bu bölümde bulunmayan kayıtlardır.
+
+kullanım: fix-boot-order [--first] [--dry-run]
+  --first    MindOS'u her durumda en başa al (varsayılan: yalnızca bozuk bir kayıt önündeyse ya da MindOS kaydı yoksa;
+             kullanıcının bilerek seçtiği sıra korunur)
+  --dry-run  ne yapılacağını yaz, değiştirme
+"""
+import glob
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+DRY = "--dry-run" in sys.argv
+FIRST = "--first" in sys.argv
+LOG = "/var/log/mindos-boot-fix.log"
+STALE_LABEL = re.compile(r"^(debian|mindos.*)$", re.I)
+
+
+def run(*cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    return r.returncode, r.stdout.strip()
+
+
+def say(msg):
+    print(msg, flush=True)
+    try:
+        with open(LOG, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except OSError:
+        pass
+
+
+def find_ci(base, rel):
+    """FAT büyük/küçük harf duyarsız: base altında rel yolunu bulur, yoksa None"""
+    cur = base
+    for part in [p for p in rel.replace("\\", "/").split("/") if p]:
+        try:
+            match = next((n for n in os.listdir(cur) if n.lower() == part.lower()), None)
+        except OSError:
+            return None
+        if match is None:
+            return None
+        cur = os.path.join(cur, match)
+    return cur
+
+
+def entries_and_order():
+    rc, out = run("efibootmgr", "-v")
+    entries, order = {}, []
+    if rc != 0:
+        return None, None
+    for line in out.splitlines():
+        if line.startswith("BootOrder:"):
+            order = [x for x in line.split(":", 1)[1].strip().split(",") if x]
+            continue
+        m = re.match(r"^Boot([0-9A-Fa-f]{4})(\*?)\s+(.*?)\t(.*)$", line)
+        if not m:
+            continue
+        num, _, label, path = m.groups()
+        guid = re.search(r"HD\((\d+),GPT,([0-9a-fA-F-]{36}),", path)
+        loader = re.search(r"File\(([^)]*)\)", path)
+        entries[num.upper()] = {"label": label.strip(), "guid": guid.group(2).lower() if guid else None,
+                                "part": int(guid.group(1)) if guid else None,
+                                "loader": loader.group(1) if loader else None}
+    return entries, [o.upper() for o in order]
+
+
+def main():
+    if os.geteuid() != 0:
+        sys.exit("root yetkisi gerekli")
+    if not os.path.isdir("/sys/firmware/efi/efivars") or not shutil.which("efibootmgr"):
+        return  # UEFI değil (eski BIOS kurulumu) ya da efibootmgr yok
+    if os.path.exists("/run/live/medium"):
+        return
+    esp_mount = next((m for m in ("/boot/efi", "/efi") if os.path.ismount(m)), None)
+    if not esp_mount:
+        say("ESP bağlı değil; UEFI kaydına dokunulmadı.")
+        return
+    _, esp_dev = run("findmnt", "-no", "SOURCE", esp_mount)
+    _, esp_guid = run("blkid", "-s", "PARTUUID", "-o", "value", esp_dev)
+    esp_guid = esp_guid.lower()
+    _, root_uuid = run("findmnt", "-no", "UUID", "/")
+    name = os.path.basename(esp_dev)
+    disk = "/dev/" + run("lsblk", "-no", "PKNAME", esp_dev)[1]
+    try:
+        partnum = int(open(f"/sys/class/block/{name}/partition").read())
+    except (OSError, ValueError):
+        say("ESP bölüm numarası okunamadı; dokunulmadı.")
+        return
+
+    # Bu kurulumun önyükleyici klasörü: grub.cfg'si kök bölümümüzün UUID'sine bakan klasör
+    ours_dir = None
+    for d in sorted(glob.glob(os.path.join(esp_mount, "EFI", "*"))):
+        cfg = find_ci(d, "grub.cfg")
+        try:
+            if cfg and root_uuid and root_uuid in open(cfg, errors="replace").read():
+                ours_dir = os.path.basename(d)
+                if ours_dir.lower().startswith("mindos"):
+                    break
+        except OSError:
+            pass
+    if not ours_dir:
+        say("Bu kurulumun önyükleyici klasörü ESP'de bulunamadı; dokunulmadı.")
+        return
+    loader = "shimx64.efi" if find_ci(esp_mount, f"EFI/{ours_dir}/shimx64.efi") else "grubx64.efi"
+    ours_path = f"\\EFI\\{ours_dir}\\{loader}"
+
+    entries, order = entries_and_order()
+    if entries is None:
+        say("UEFI kayıtları okunamadı; dokunulmadı.")
+        return
+    _, blk = run("lsblk", "-rno", "PARTUUID")
+    known = {g.lower() for g in blk.split()}
+    _, fsu = run("lsblk", "-rno", "UUID")
+    fs_uuids = {u.lower() for u in fsu.split()}
+    # Disk bilgisi okunamıyorsa hiçbir kayda dokunma: sağlam kayıtlar "bölümü yok" sanılıp silinebilirdi
+    if not esp_guid or esp_guid not in known or not root_uuid or root_uuid.lower() not in fs_uuids:
+        say("Disk bilgileri okunamadı; UEFI kayıtlarına dokunulmadı.")
+        return
+
+    ours = next((n for n in order + list(entries) if n in entries
+                 and entries[n]["guid"] == esp_guid and (entries[n]["loader"] or "").lower() == ours_path.lower()), None)
+    changed = False
+    if ours is None:
+        say(f"MindOS UEFI kaydı yok; oluşturuluyor ({ours_path}).")
+        if not DRY:
+            run("efibootmgr", "-c", "-d", disk, "-p", str(partnum), "-L", "MindOS Paradise", "-l", ours_path)
+            entries, order = entries_and_order()
+            if entries is None:
+                return
+            ours = next((n for n in order if n in entries and entries[n]["guid"] == esp_guid
+                         and (entries[n]["loader"] or "").lower() == ours_path.lower()), None)
+        changed = True
+        if ours is None:
+            if not DRY:
+                say("Kayıt oluşturulamadı (donanım yazılımı reddetmiş olabilir).")
+            return
+
+    # Bozuk MindOS/Debian kayıtları: gösterdiği bölüm yok ya da dosya bu ESP'de yok
+    stale = []
+    for num, e in entries.items():
+        if num == ours or not STALE_LABEL.match(e["label"]) or not e["guid"]:
+            continue
+        if e["guid"] not in known:
+            stale.append((num, "bölüm artık yok"))
+        elif e["guid"] == esp_guid and e["loader"] and not find_ci(esp_mount, e["loader"]):
+            stale.append((num, f"dosya yok: {e['loader']}"))
+        elif e["guid"] == esp_guid and e["loader"]:
+            # Dosya duruyor ama grub.cfg'nin aradığı kök bölüm artık yok: açılışta "grub rescue"
+            cfg = find_ci(esp_mount, e["loader"].replace("\\", "/").rsplit("/", 1)[0] + "/grub.cfg")
+            try:
+                wanted = re.findall(r"search\.fs_uuid\s+(\S+)", open(cfg, errors="replace").read()) if cfg else []
+            except OSError:
+                wanted = []
+            if wanted and not any(u.lower() in fs_uuids for u in wanted):
+                stale.append((num, "gösterdiği Linux bölümü artık yok"))
+    for num, why in stale:
+        say(f"Bozuk kayıt siliniyor: Boot{num} {entries[num]['label']} ({why})")
+        if not DRY:
+            run("efibootmgr", "-b", num, "-B")
+
+    # Sıra: MindOS'un önünde bozuk bir kayıt vardıysa (ya da MindOS kaydı yoktu, ya da --first) MindOS başa alınır.
+    # Kullanıcının bilerek seçtiği sıra (ör. Windows önde) korunur.
+    gone = {n for n, _ in stale}
+    orig = order
+    stale_ahead = ours in orig and any(o in gone for o in orig[:orig.index(ours)])
+    order = [o for o in orig if o not in gone]
+    if FIRST or changed or stale_ahead or ours not in orig:
+        new = [ours] + [o for o in order if o != ours]
+        if new != order or ours not in order or gone:
+            say(f"Açılış sırası: {','.join(orig)} -> {','.join(new)}")
+            if not DRY:
+                run("efibootmgr", "-o", ",".join(new))
+            changed = True
+    if not changed and not stale:
+        say("UEFI açılış kayıtları sağlam; değişiklik gerekmedi.")
+
+
+if __name__ == "__main__":
+    main()

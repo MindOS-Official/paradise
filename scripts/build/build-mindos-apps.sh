@@ -36,6 +36,7 @@ FILES=(
   etc/apt/apt.conf.d/80mindos-xkb
   usr/lib/systemd/system-sleep/mindos-touchpad
   etc/default/grub.d/10-mindos-osprober.cfg
+  usr/libexec/mindos/fix-boot-order
 )
 mkdir -p "$P/DEBIAN"
 for f in "${FILES[@]}"; do
@@ -94,8 +95,14 @@ if [ "$1" = configure ]; then
     [ -d /run/systemd/system ] && systemctl daemon-reload || true
     /usr/libexec/mindos/mindos-avatar || true
     /usr/libexec/mindos/xkb-remove-variants || true
+    # Bozuk bir önceki kurulumdan kalan UEFI kaydı MindOS'un önündeyse (grub rescue) MindOS başa alınır
+    if [ -d /run/systemd/system ] && ! systemd-detect-virt --chroot --quiet && [ ! -e /run/live/medium ] && [ ! -e /var/lib/mindos/boot-order-checked ]; then
+        mkdir -p /var/lib/mindos
+        timeout 60 /usr/libexec/mindos/fix-boot-order >/dev/null 2>&1 || true
+        : > /var/lib/mindos/boot-order-checked
+    fi
     # Windows'un GRUB menüsünde görünmesi için (os-prober artık açık) menü bir kez yeniden üretilir
-    if [ -f /boot/grub/grub.cfg ] && [ -d /run/systemd/system ] && [ ! -e /run/live/medium ] \
+    if [ -f /boot/grub/grub.cfg ] && [ -d /run/systemd/system ] && ! systemd-detect-virt --chroot --quiet && [ ! -e /run/live/medium ] \
        && [ ! -e /var/lib/mindos/osprober-grub-updated ]; then
         mkdir -p /var/lib/mindos
         timeout 180 update-grub >/dev/null 2>&1 || true
