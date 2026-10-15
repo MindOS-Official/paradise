@@ -79,6 +79,13 @@ usr/bin/mindbot
 usr/libexec/mindos/mindos-avatar
 usr/lib/systemd/system/mindos-avatar.service
 usr/lib/systemd/system/multi-user.target.wants/mindos-avatar.service
+usr/lib/python3/dist-packages/mindos_prefs.py
+usr/libexec/mindos/mindos-update-notify
+usr/lib/systemd/user/mindos-update-notify.service
+usr/lib/systemd/user/mindos-update-notify.timer
+usr/lib/systemd/user/timers.target.wants/mindos-update-notify.timer
+usr/libexec/mindos/xkb-remove-variants
+etc/apt/apt.conf.d/80mindos-xkb
 
 # --- Güvenlik, bellek ve performans
 etc/sysctl.d/80-mindos-hardening.conf

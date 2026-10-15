@@ -93,10 +93,12 @@ def record_successful_submission(subject: str, message: str, category: str):
     except Exception:
         pass
 
-def submit_feedback(category: str, subject: str, message: str, user_alias: str = "") -> tuple[bool, str]:
+def submit_feedback(category: str, subject: str, message: str, user_alias: str = "",
+                    include_system: bool = False) -> tuple[bool, str]:
     """
-    Analyzes feedback appropriateness with AI, then dispatches to developer email.
-    The developer email is never shown or returned to the user.
+    Analyzes feedback appropriateness with AI, then dispatches to developer email
+    (via the formsubmit.co relay). System details (OS, kernel, uptime, RAM) are added only
+    when the user ticks "include system info" in the form.
     """
     # 1. Check Rate Limit (24 hours)
     allowed, rate_msg, _ = check_rate_limit()
@@ -116,21 +118,23 @@ def submit_feedback(category: str, subject: str, message: str, user_alias: str =
 
     # 4. Prepare payload for developer mailbox
     target_email = _get_dev_mailbox()
-    telemetry = get_live_telemetry()
-
     payload = {
         "_subject": f"[Mind Helper Feedback] [{category.upper()}] {subject}",
         "Category": category,
         "Subject": subject,
         "Sender": user_alias.strip() or "MindOS User",
         "Feedback": message,
-        "System_OS": telemetry.get("os_name", "MindOS Paradise"),
-        "Kernel": telemetry.get("kernel", "Unknown"),
-        "Uptime": telemetry.get("uptime_str", "Unknown"),
-        "RAM_Usage": f"{telemetry.get('mem_used_gb')}G / {telemetry.get('mem_total_gb')}G ({telemetry.get('mem_percent')}%)",
         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"),
         "_captcha": "false"
     }
+    if include_system:  # yalnızca kullanıcı formda işaretlediyse
+        telemetry = get_live_telemetry()
+        payload.update({
+            "System_OS": telemetry.get("os_name", "MindOS Paradise"),
+            "Kernel": telemetry.get("kernel", "Unknown"),
+            "Uptime": telemetry.get("uptime_str", "Unknown"),
+            "RAM_Usage": f"{telemetry.get('mem_used_gb')}G / {telemetry.get('mem_total_gb')}G ({telemetry.get('mem_percent')}%)",
+        })
 
     # Dispatch via FormSubmit AJAX endpoint
     try:

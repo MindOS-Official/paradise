@@ -557,6 +557,14 @@ def get_uptime_seconds():
         return 0.0
 
 
+def run_cmd(args, timeout=3):
+    """Komutun çıktısı; hata ya da zaman aşımında "" (donanım okumaları arayüzü asla kilitlemesin)"""
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
 def get_cpu_model():
     try:
         with open('/proc/cpuinfo', 'r') as f:
@@ -599,8 +607,7 @@ def get_gpu_info():
     gpu_temp = 0.0
     
     try:
-        res = subprocess.check_output("lspci -nn 2>/dev/null | grep -E 'VGA|3D|Display'", shell=True, text=True)
-        gpu_lines = res.strip().splitlines()
+        gpu_lines = [l for l in run_cmd(["lspci", "-nn"]).splitlines() if re.search(r"VGA|3D|Display", l)]
         if gpu_lines:
             line = gpu_lines[0]
             parts = line.split(":", 2)
@@ -655,11 +662,8 @@ def get_gpu_info():
             
     if "NVIDIA" in gpu_model.upper() or gpu_model == "Unknown Graphics":
         try:
-            res = subprocess.check_output(
-                "nvidia-smi --query-gpu=name,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>/dev/null",
-                shell=True,
-                text=True
-            )
+            res = run_cmd(["nvidia-smi", "--query-gpu=name,utilization.gpu,temperature.gpu",
+                           "--format=csv,noheader,nounits"])
             parts = res.strip().split(",")
             if len(parts) >= 3:
                 gpu_model = parts[0].strip()
@@ -672,13 +676,12 @@ def get_gpu_info():
 
 
 def get_gpu_driver():
-    try:
-        driver_path = "/sys/class/drm/card0/device/driver"
-        if os.path.exists(driver_path):
+    for driver_path in sorted(glob.glob("/sys/class/drm/card*/device/driver")):
+        try:
             return os.path.basename(os.readlink(driver_path))
-    except Exception:
-        pass
-    return "amdgpu"
+        except Exception:
+            pass
+    return "—"
 
 
 def get_gpu_pwm_paths():
@@ -736,8 +739,7 @@ def get_disk_usage():
 def get_usb_drives():
     drives = []
     try:
-        res = subprocess.check_output("lsblk -d -o NAME,SIZE,TRAN,MODEL -J 2>/dev/null", shell=True, text=True)
-        data = json.loads(res)
+        data = json.loads(run_cmd(["lsblk", "-d", "-o", "NAME,SIZE,TRAN,MODEL", "-J"]) or "{}")
         if "blockdevices" in data:
             for dev in data["blockdevices"]:
                 if dev.get("tran") == "usb":
@@ -789,8 +791,12 @@ def get_categorized_devices():
                         if 'kbd' in handlers:
                             is_kbd = True
                 if name:
-                    if any(x in name.lower() for x in ["power button", "video bus", "sleep button", "lid switch", "pc spkr", "at translated"]):
+                    # sistem düğmeleri ve hoparlör de "kbd" olarak görünür; dahili klavye (AT Translated) kalır
+                    if any(x in name.lower() for x in ["power button", "video bus", "sleep button", "lid switch",
+                                                       "pc speaker", "pc spkr"]):
                         continue
+                    if name.lower().startswith("at translated set 2 keyboard"):
+                        name = "Dahili klavye" if os.environ.get("LANG", "").startswith("tr") else "Built-in keyboard"
                     if is_mouse:
                         categories['mouse'].append(name)
                     elif is_kbd:
@@ -799,7 +805,8 @@ def get_categorized_devices():
             pass
             
     try:
-        res = subprocess.check_output("bluetoothctl devices Connected 2>/dev/null", shell=True, text=True)
+        res = run_cmd(["bluetoothctl", "--timeout", "2", "devices", "Connected"]) \
+            if glob.glob("/sys/class/bluetooth/hci*") else ""
         for line in res.splitlines():
             parts = line.split(" ", 2)
             if len(parts) >= 3:
@@ -811,7 +818,7 @@ def get_categorized_devices():
         pass
         
     try:
-        res = subprocess.check_output("lsusb 2>/dev/null", shell=True, text=True)
+        res = run_cmd(["lsusb"])
         for line in res.splitlines():
             if "root hub" not in line.lower() and "hub" not in line.lower():
                 parts = line.split(":", 1)
@@ -833,14 +840,14 @@ def get_categorized_devices():
 
 def get_system_volume():
     try:
-        res = subprocess.check_output("amixer get Master 2>/dev/null", shell=True, text=True)
+        res = run_cmd(["amixer", "get", "Master"])
         match = re.search(r'\[(\d+)%\]', res)
         if match:
             return int(match.group(1))
     except Exception:
         pass
     try:
-        res = subprocess.check_output("pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null", shell=True, text=True)
+        res = run_cmd(["pactl", "get-sink-volume", "@DEFAULT_SINK@"])
         match = re.search(r'(\d+)%', res)
         if match:
             return int(match.group(1))
@@ -870,8 +877,8 @@ def get_screen_brightness():
         except Exception:
             pass
     try:
-        res = subprocess.check_output("brightnessctl get 2>/dev/null", shell=True, text=True)
-        max_b = int(subprocess.check_output("brightnessctl max 2>/dev/null", shell=True, text=True))
+        res = run_cmd(["brightnessctl", "get"])
+        max_b = int(run_cmd(["brightnessctl", "max"]))
         return int((int(res.strip()) / max_b) * 100)
     except Exception:
         pass
@@ -1931,65 +1938,47 @@ class MindArcWindow(Adw.ApplicationWindow):
     # --- Asenkron Arka Plan Bilgi Okuma İşçi İpliği (Thread Worker) ---
 
     def bg_stats_worker(self):
-        while self.stats_active:
+        """Donanım bilgilerini arka planda toplar. Her ölçüm ayrı ayrı denenir; biri hata verir ya da
+        zaman aşımına uğrarsa yalnızca o alan önceki değerinde kalır, sayfa boş kalmaz."""
+        def measure(stats, key, fn):
             try:
-                uptime_sec = get_uptime_seconds()
-                hours = int(uptime_sec // 3600)
-                minutes = int((uptime_sec % 3600) // 60)
-                seconds = int(uptime_sec % 60)
-                uptime_str = f"{hours}h {minutes}m {seconds}s"
-                
-                cpu_usage = psutil.cpu_percent(interval=None)
-                cpu_temp = get_cpu_temp()
-                cpu_model = get_cpu_model()
-                cpu_logical = psutil.cpu_count(logical=True)
-                cpu_physical = psutil.cpu_count(logical=False)
-                
-                try:
-                    freq = psutil.cpu_freq()
-                    cpu_speed = f"{freq.current / 1000.0:.2f} GHz" if freq else "N/A"
-                except Exception:
-                    cpu_speed = "N/A"
-                
-                ram = psutil.virtual_memory()
-                ram_percent = ram.percent
-                ram_used_gb = ram.used / (1024 ** 3)
-                ram_total_gb = ram.total / (1024 ** 3)
-                ram_speed = get_ram_speed()
-                
-                gpu_model, gpu_usage, gpu_temp = get_gpu_info()
-                gpu_driver = get_gpu_driver()
-                
-                volume = get_system_volume()
-                brightness = get_screen_brightness()
-                
-                devices = get_categorized_devices()
-                usb_drives = get_usb_drives()
-                
-                self.latest_stats = {
-                    "uptime_str": uptime_str,
-                    "cpu_usage": cpu_usage,
-                    "cpu_temp": cpu_temp,
-                    "ram_percent": ram_percent,
-                    "ram_used_gb": ram_used_gb,
-                    "ram_total_gb": ram_total_gb,
-                    "gpu_model": gpu_model,
-                    "gpu_usage": gpu_usage,
-                    "gpu_temp": gpu_temp,
-                    "gpu_driver": gpu_driver,
-                    "cpu_model": cpu_model,
-                    "ram_speed": ram_speed,
-                    "cpu_logical": cpu_logical,
-                    "cpu_physical": cpu_physical,
-                    "cpu_speed": cpu_speed,
-                    "volume": volume,
-                    "brightness": brightness,
-                    "devices": devices,
-                    "usb_drives": usb_drives
-                }
-            except Exception:
-                pass
-                
+                stats[key] = fn()
+            except Exception as e:
+                print(f"mind-arc: {key} okunamadı: {e}", file=sys.stderr)
+
+        def cpu_speed():
+            freq = psutil.cpu_freq()
+            return f"{freq.current / 1000.0:.2f} GHz" if freq else "—"
+
+        def uptime():
+            sec = get_uptime_seconds()
+            return f"{int(sec // 3600)}h {int(sec % 3600 // 60)}m {int(sec % 60)}s"
+
+        slow_every, tick = 5, 0  # aygıt/GPU/USB taraması her 5 saniyede bir
+        while self.stats_active:
+            stats = dict(self.latest_stats)
+            measure(stats, "uptime_str", uptime)
+            measure(stats, "cpu_usage", lambda: psutil.cpu_percent(interval=None))
+            measure(stats, "cpu_temp", get_cpu_temp)
+            measure(stats, "cpu_speed", cpu_speed)
+            ram = psutil.virtual_memory()
+            stats.update(ram_percent=ram.percent, ram_used_gb=ram.used / 1024 ** 3, ram_total_gb=ram.total / 1024 ** 3)
+            measure(stats, "volume", get_system_volume)
+            measure(stats, "brightness", get_screen_brightness)
+            if tick % slow_every == 0:
+                measure(stats, "cpu_model", get_cpu_model)
+                measure(stats, "cpu_logical", lambda: psutil.cpu_count(logical=True))
+                measure(stats, "cpu_physical", lambda: psutil.cpu_count(logical=False) or psutil.cpu_count())
+                measure(stats, "ram_speed", get_ram_speed)
+                measure(stats, "gpu_driver", get_gpu_driver)
+                measure(stats, "devices", get_categorized_devices)
+                measure(stats, "usb_drives", get_usb_drives)
+            try:
+                stats["gpu_model"], stats["gpu_usage"], stats["gpu_temp"] = get_gpu_info()
+            except Exception as e:
+                print(f"mind-arc: GPU okunamadı: {e}", file=sys.stderr)
+            self.latest_stats = stats
+            tick += 1
             time.sleep(1)
 
     def update_ui_with_latest_stats(self):
@@ -2361,35 +2350,13 @@ class MindArcWindow(Adw.ApplicationWindow):
                 return 0.0
 
     def on_mouse_speed_changed(self, scale):
-        val = scale.get_value()
-        try:
-            settings = Gio.Settings.new("org.gnome.desktop.peripherals.mouse")
-            settings.set_double("speed", val)
-        except Exception:
-            pass
-            
-        try:
-            val_str = f"{val:.2f}".replace(",", ".")
-            subprocess.run(["gsettings", "set", "org.gnome.desktop.peripherals.mouse", "speed", str(val_str)], stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-        try:
-            val_str = f"{val:.2f}".replace(",", ".")
-            res = subprocess.check_output("xfconf-query -c pointers -l 2>/dev/null", shell=True, text=True)
-            for line in res.splitlines():
-                if "AccelerationSpeed" in line:
-                    subprocess.run(["xfconf-query", "-c", "pointers", "-p", line.strip(), "-s", str(val_str)], stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-        try:
-            kde_val = (val + 1.0) * 0.9 + 0.2
-            val_str = f"{kde_val:.2f}".replace(",", ".")
-            subprocess.run(["kwriteconfig5", "--file", "kcminputrc", "--group", "Mouse", "--key", "PointerAcceleration", str(val_str)], stderr=subprocess.DEVNULL)
-            subprocess.run("qdbus org.kde.KWin /KWin reconfigure 2>/dev/null", shell=True)
-        except Exception:
-            pass
+        """GNOME fare ve touchpad hızı (-1 yavaş … 1 hızlı); ikisi birlikte ayarlanır"""
+        val = round(scale.get_value(), 2)
+        for schema in ("org.gnome.desktop.peripherals.mouse", "org.gnome.desktop.peripherals.touchpad"):
+            try:
+                Gio.Settings.new(schema).set_double("speed", val)
+            except Exception:
+                pass
 
     def get_dark_mode_gsettings(self):
         try:

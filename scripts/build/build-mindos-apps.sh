@@ -27,6 +27,13 @@ FILES=(
   usr/libexec/mindos/mindos-avatar
   usr/lib/systemd/system/mindos-avatar.service
   usr/lib/systemd/system/multi-user.target.wants/mindos-avatar.service
+  usr/lib/python3/dist-packages/mindos_prefs.py
+  usr/libexec/mindos/mindos-update-notify
+  usr/lib/systemd/user/mindos-update-notify.service
+  usr/lib/systemd/user/mindos-update-notify.timer
+  usr/lib/systemd/user/timers.target.wants/mindos-update-notify.timer
+  usr/libexec/mindos/xkb-remove-variants
+  etc/apt/apt.conf.d/80mindos-xkb
 )
 mkdir -p "$P/DEBIAN"
 for f in "${FILES[@]}"; do
@@ -55,7 +62,8 @@ Description: MindOS Paradise applications and desktop defaults
  restart-and-update service, boot splash settings, desktop defaults and
  shared MindOS files.
 CTL
-printf '%s\n' /etc/xdg/autostart/mindhelper-autostart.desktop /etc/dconf/db/local.d/20-mindos-shell > "$P/DEBIAN/conffiles"
+printf '%s\n' /etc/xdg/autostart/mindhelper-autostart.desktop /etc/dconf/db/local.d/20-mindos-shell \
+    /etc/apt/apt.conf.d/80mindos-xkb > "$P/DEBIAN/conffiles"
 # /usr/lib/os-release (MindOS Paradise kimliği) Debian'ın base-files paketine ait; bir Debian ara
 # sürümü onu "Debian GNU/Linux" ile değiştirmesin diye base-files'ın kopyası kenara yönlendirilir.
 cat > "$P/DEBIAN/preinst" <<'PR'
@@ -83,6 +91,7 @@ if [ "$1" = configure ]; then
     command -v dconf >/dev/null && dconf update || true
     [ -d /run/systemd/system ] && systemctl daemon-reload || true
     /usr/libexec/mindos/mindos-avatar || true
+    /usr/libexec/mindos/xkb-remove-variants || true
 fi
 exit 0
 PI

@@ -1,0 +1,2 @@
+// MindOS: xkb-data güncellenince Türkiye klavye listesi yeniden düzenlenir (bkz. /usr/libexec/mindos/xkb-remove-variants)
+DPkg::Post-Invoke { "if [ -x /usr/libexec/mindos/xkb-remove-variants ]; then /usr/libexec/mindos/xkb-remove-variants || true; fi"; };

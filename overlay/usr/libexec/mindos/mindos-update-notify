@@ -1,0 +1,123 @@
+#!/usr/bin/python3
+"""Bekleyen MindOS güncellemesi varsa masaüstü bildirimi gösterir.
+
+mindos-update-notify.timer (systemd --user) ile girişten 15 dakika sonra ve günde bir kez çalışır.
+Yetki istemez: 'mindpkg check --json' küçük, imzalı system.json'u okur. "Güncelle" düğmesi
+Mind Arc'ı Sistem Güncellemesi sayfasında açar. Aynı güncellemeler için en fazla günde bir
+kez bildirir; Mind Arc → Sistem Güncellemesi → Güncelleme Bildirimleri ile kapatılabilir.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+                     "mindos", "update-notify.json")
+
+
+def notify(title, body, page, button):
+    """Bildirim gösterir; düğmeye basılırsa Mind Arc'ı ilgili sayfada açar (10 dakika bekler)"""
+    import gi
+    gi.require_version("Notify", "0.7")
+    from gi.repository import GLib, Notify
+    Notify.init("MindOS")
+    note = Notify.Notification.new(title, body, "mindos-logo")
+    loop = GLib.MainLoop()
+
+    def open_page(*_args):
+        subprocess.Popen(["mind-arc", "--page", page], start_new_session=True)
+        loop.quit()
+
+    note.add_action("default", button, open_page)
+    note.add_action("open", button, open_page)
+    note.connect("closed", lambda *_a: loop.quit())
+    note.show()
+    GLib.timeout_add_seconds(600, loop.quit)
+    loop.run()
+
+
+def nvidia_reminder(tr):
+    """NVIDIA kartı var ama sürücü kurulu değilse haftada en fazla bir kez hatırlatır"""
+    try:
+        out = subprocess.run(["lspci", "-nn", "-d", "10de:"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return False
+    import re
+    ids = [int(m.group(1), 16) for l in out.splitlines() if re.search(r"\[030[02]\]", l)
+           for m in [re.search(r"\[10de:([0-9a-f]{4})\]", l)] if m]
+    if not ids or max(ids) < 0x1340:  # kart yok ya da güncel sürücüsü olmayan (Kepler ve öncesi)
+        return False
+    if os.path.exists("/proc/driver/nvidia/version") or subprocess.run(
+            ["dpkg-query", "-W", "-f=${db:Status-Abbrev}", "nvidia-driver"],
+            capture_output=True, text=True).stdout.startswith("ii"):
+        return False
+    state = STATE.replace("update-notify", "nvidia-notify")
+    try:
+        if time.time() - os.path.getmtime(state) < 7 * 86400:
+            return False
+    except OSError:
+        pass
+    os.makedirs(os.path.dirname(state), exist_ok=True)
+    open(state, "w").close()
+    notify("NVIDIA ekran kartı bulundu" if tr else "NVIDIA graphics card found",
+           "Oyun ve 3D performansı için NVIDIA sürücüsünü tek tıkla kurabilirsiniz." if tr
+           else "Install the NVIDIA driver with one click for gaming and 3D performance.",
+           "hardware", "Kur" if tr else "Install")
+    return True
+
+
+def main():
+    try:
+        import mindos_prefs
+        if not mindos_prefs.get("update_notify"):
+            return 0
+    except ImportError:
+        pass
+    if os.path.exists("/run/live/medium"):
+        return 0
+    if nvidia_reminder(os.environ.get("LANG", "").startswith("tr")):
+        return 0
+    try:
+        r = subprocess.run(["/usr/local/bin/mindpkg", "check", "--json"], capture_output=True, text=True,
+                           timeout=300)
+        info = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        return 0
+    if info.get("scheduled") or info.get("live") or not info.get("pending"):
+        return 0
+
+    rel = info.get("release") or {}
+    latest = rel.get("latest") or {}
+    # Bildirimi tetikleyen güncelleme kümesi; Debian paket sayısı her gün değişebildiği için dahil değil
+    key = json.dumps([latest.get("version") if rel.get("newer") else None,
+                      info.get("mindpkg", {}).get("latest"),
+                      [(c["name"], c["version"]) for c in info.get("components", [])],
+                      [(m["name"], m["version"]) for m in info.get("mind", [])]])
+    try:
+        with open(STATE, encoding="utf-8") as f:
+            last = json.load(f)
+    except (OSError, ValueError):
+        last = {}
+    elapsed = time.time() - last.get("time", 0)
+    if elapsed < 20 * 3600 or (last.get("key") == key and elapsed < 3 * 86400):
+        return 0
+
+    tr = os.environ.get("LANG", "").startswith("tr")
+    if rel.get("newer"):
+        title = f"{latest.get('name', 'MindOS Paradise')} hazır" if tr else f"{latest.get('name', 'MindOS Paradise')} is available"
+    else:
+        title = "MindOS güncellemeleri hazır" if tr else "MindOS updates are available"
+    n = info["pending"]
+    body = (f"{n} güncelleme bekliyor. Bilgisayarı yeniden başlatarak güvenle kurabilirsiniz." if tr
+            else f"{n} updates are waiting. Restart to install them safely.")
+
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    with open(STATE, "w", encoding="utf-8") as f:
+        json.dump({"time": time.time(), "key": key}, f)
+    notify(title, body, "updates", "Güncelle" if tr else "Update")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

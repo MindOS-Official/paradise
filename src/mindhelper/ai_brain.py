@@ -308,6 +308,12 @@ class MindHelperBrain:
     def _attempt_web_research(self, query: str) -> str:
         """Attempts a quick web lookup via DuckDuckGo Instant Answer API."""
         try:
+            import mindos_prefs
+            if not mindos_prefs.get("web_search"):  # soru DuckDuckGo'ya gider; yalnızca izinle
+                return None
+        except Exception:
+            return None
+        try:
             clean_q = urllib.parse.quote_plus(f"linux {query}")
             url = f"https://api.duckduckgo.com/?q={clean_q}&format=json&no_html=1&skip_disambig=1"
             headers = {"User-Agent": "MindHelper/1.0 (MindOS Paradise; Linux)"}

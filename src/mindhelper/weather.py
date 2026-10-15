@@ -15,11 +15,22 @@ _WEATHER_CACHE = {
     "data": None
 }
 
+def _weather_allowed() -> bool:
+    """wttr.in konumu IP adresinden tahmin eder; kullanıcı izin vermedikçe istek yapılmaz"""
+    try:
+        import mindos_prefs
+        return mindos_prefs.get("weather")
+    except Exception:
+        return False
+
+
 def get_atmospheric_status(timeout=3) -> dict:
     """
     Fetches atmospheric conditions with local in-memory caching (15 min).
     """
     now = time.time()
+    if not _weather_allowed():
+        return {"available": False, "temp_c": "--", "humidity": "--", "condition": "", "city": ""}
     if _WEATHER_CACHE["data"] and (now - _WEATHER_CACHE["timestamp"] < 900):
         return _WEATHER_CACHE["data"]
 

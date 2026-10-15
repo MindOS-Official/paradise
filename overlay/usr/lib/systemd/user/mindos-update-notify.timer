@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily MindOS update check
+
+[Timer]
+OnStartupSec=15min
+OnUnitActiveSec=24h
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

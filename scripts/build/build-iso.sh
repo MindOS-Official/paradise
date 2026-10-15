@@ -3,6 +3,14 @@
 # kullanım: sudo build-iso.sh <build_dizini> <cikti.iso>
 set -euo pipefail
 B="${1:?build dizini (rootfs/ ve iso_root/ içeren)}"
+# Kaynaktaki programlar imajdakiyle aynı olmalı (eski bir kopya ISO'ya girmesin)
+for pair in "mindpkg/mindpkg:usr/local/bin/mindpkg" "mind-arc/main.py:opt/mind-arc/main.py" \
+            "mind-arc/mindarc_extra.py:opt/mind-arc/mindarc_extra.py"; do
+    src=$B/${pair%%:*}; dst=$B/rootfs/${pair#*:}
+    if [ -f "$src" ] && ! cmp -s "$src" "$dst"; then
+        echo "HATA: $dst kaynaktaki $src ile aynı değil; önce imaja kurun." >&2; exit 1
+    fi
+done
 OUT="${2:?çıktı ISO yolu}"
 R="$B/rootfs"
 I="$B/iso_root"

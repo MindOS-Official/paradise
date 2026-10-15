@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -194,8 +194,45 @@ def download_with_progress(url, dest_path):
             shutil.copyfileobj(response, f)
 
 
+class IndexSyncing(ValueError):
+    """İndeks ile imzası aynı sürüme ait değil (depo az önce güncellendi, önbellekler eşitleniyor)"""
+
+
+def verify_index(path, sig_path):
+    """<dosya>.sig: {"sha256", "sig"}; imza MindOS sürüm anahtarıyla dosyanın baytları üzerinde"""
+    try:
+        with open(sig_path, encoding="utf-8") as f:
+            meta = json.load(f)
+    except Exception:
+        raise ValueError("imza dosyası okunamadı")
+    if calculate_sha256(path) != str(meta.get("sha256", "")).lower():
+        raise IndexSyncing("depo şu an güncelleniyor, birkaç dakika sonra yeniden deneyin")
+    verify_release_signature(path, str(meta.get("sig", "")))
+
+
+def fetch_signed(url, dest, signed=True):
+    """url'yi dest'e indirir; signed ise url.sig ile doğrular. Başarısızlıkta dest'e dokunulmaz."""
+    tmp, tmp_sig = Path(f"{dest}.part"), Path(f"{dest}.sig.part")
+    try:
+        download_with_progress(url, tmp)
+        with open(tmp, encoding="utf-8") as f:
+            json.load(f)  # bozuk indeksi kabul etme
+        if signed:
+            try:
+                download_with_progress(f"{url}.sig", tmp_sig)
+            except Exception:
+                raise ValueError("indeks imzasız (imza dosyası yok); güvenlik için kabul edilmedi")
+            verify_index(tmp, tmp_sig)
+        os.replace(tmp, dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+        tmp_sig.unlink(missing_ok=True)
+
+
 def update_repos():
-    """Uzak ve yerel MindOS depolarını günceller"""
+    """Uzak ve yerel MindOS depolarını günceller. İndeksler MindOS sürüm anahtarıyla imzalıdır;
+    imzası doğrulanmayan indeks kabul edilmez, önceki (doğrulanmış) indeks kullanılmaya devam eder.
+    İmzasız bir depo yalnızca mindpkg.conf'ta "signed": false ile bilerek eklenebilir."""
     check_root()
     cfg = load_config()
     repos = cfg.get("repositories", [])
@@ -204,16 +241,14 @@ def update_repos():
         if not repo.get("enabled", True):
             continue
         name = repo["name"]
-        url = repo["url"]
-        index_url = f"{url}/packages.json"
-        dest_file = Path(REPOS_CACHE) / f"{name}.json"
+        index_url = f"{repo['url']}/packages.json"
         print(f"  {COLOR_ACCENT}• {name}:{COLOR_RESET} {index_url}")
         try:
-            tmp_index = dest_file.with_suffix(".json.part")
-            download_with_progress(index_url, tmp_index)
-            json.load(open(tmp_index, encoding="utf-8"))  # bozuk indeksi kabul etme
-            os.replace(tmp_index, dest_file)
-            print(f"    {COLOR_GREEN}✓ Başarıyla güncellendi.{COLOR_RESET}")
+            fetch_signed(index_url, Path(REPOS_CACHE) / f"{name}.json", repo.get("signed", True))
+            print(f"    {COLOR_GREEN}✓ Başarıyla güncellendi" +
+                  (" (imza doğrulandı)." if repo.get("signed", True) else " (imzasız depo).") + COLOR_RESET)
+        except IndexSyncing as e:
+            print(f"    {COLOR_BANNER}⚠ {e}{COLOR_RESET}")
         except Exception as e:
             print(f"    {COLOR_BANNER}⚠ Depo güncellenemedi: {e}{COLOR_RESET}")
     global _index_cache, _meta_cache
@@ -490,6 +525,170 @@ def install_from_system(name):
     return True
 
 
+# ------------------------------------------------------------------------------
+# NVIDIA sürücüsü (mindpkg install nvidia)
+#   Turing ve sonrası (GTX 16xx, RTX): MindOS kernel'i + NVIDIA'nın resmi Debian deposundaki
+#     en yeni sürücü (nvidia-open, DKMS). Debian'ın 550 sürücüsü MindOS 7.x kernel'inde derlenmiyor.
+#   Maxwell / Pascal / Volta (GTX 750-1080, 9xxM, 10xxM): NVIDIA 590+ bu kartları desteklemiyor;
+#     Debian'ın 6.12 LTS kernel'i ve Debian'ın NVIDIA 550 sürücüsü kurulur, MindOS kernel'i bu
+#     bilgisayarda kullanılmaz (/etc/mindos/kernel = debian).
+#   Kepler ve öncesi: güncel sürücüsü yok; açık kaynak nouveau kullanılır.
+# ------------------------------------------------------------------------------
+NVIDIA_REPO = {
+    "list": "/etc/apt/sources.list.d/cuda-debian13-x86_64.list",  # cuda-keyring paketiyle aynı yollar
+    "keyring": "/usr/share/keyrings/cuda-archive-keyring.gpg",
+    "source": "deb [signed-by=/usr/share/keyrings/cuda-archive-keyring.gpg] "
+              "https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/ /",
+    "key_url": "https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/8793F200.pub",
+    "fingerprint": "02182E60104FCDC26EAE1B8597A5D4CB8793F200",
+}
+KERNEL_FLAVOR_FILE = "/etc/mindos/kernel"
+
+
+def kernel_flavor():
+    try:
+        return Path(KERNEL_FLAVOR_FILE).read_text(encoding="utf-8").strip() or "mindos"
+    except OSError:
+        return "mindos"
+
+
+def nvidia_gpus():
+    """[(pci_device_id, açıklama)] — yalnızca ekran denetleyicisi sınıfındaki NVIDIA aygıtları"""
+    out = subprocess.run(["lspci", "-nn", "-d", "10de:"], capture_output=True, text=True).stdout
+    gpus = []
+    for line in out.splitlines():
+        if not re.search(r"\[030[02]\]", line):
+            continue
+        m = re.search(r"\[10de:([0-9a-f]{4})\]", line)
+        if m:
+            gpus.append((int(m.group(1), 16), line.split(": ", 1)[-1]))
+    return gpus
+
+
+def nvidia_generation(device_id):
+    """PCI aygıt numarasından kuşak: 'modern' (Turing+), 'legacy' (Maxwell-Volta), 'old' (Kepler-)"""
+    if device_id >= 0x1E00:
+        return "modern"
+    if device_id >= 0x1340:
+        return "legacy"
+    return "old"
+
+
+def ensure_debian_nonfree():
+    """NVIDIA sürücüsü Debian'ın contrib/non-free bileşenlerinde"""
+    changed = False
+    for path in [Path("/etc/apt/sources.list"), *Path("/etc/apt/sources.list.d").glob("*.list")]:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        new = re.sub(r"^(deb\s+\S+debian\S*\s+\S+)\s+main(?:\s+non-free-firmware)?\s*$",
+                     r"\1 main contrib non-free non-free-firmware", text, flags=re.M)
+        if new != text:
+            path.write_text(new, encoding="utf-8")
+            changed = True
+    return changed
+
+
+def add_nvidia_repo():
+    if Path(NVIDIA_REPO["keyring"]).exists() and Path(NVIDIA_REPO["list"]).exists():
+        return
+    print(f"{COLOR_GREEN}==>{COLOR_RESET} NVIDIA'nın resmi Debian deposu ekleniyor...")
+    with tempfile.TemporaryDirectory() as td:
+        pub = Path(td) / "nvidia.pub"
+        download_with_progress(NVIDIA_REPO["key_url"], pub)
+        shown = subprocess.run(["gpg", "--batch", "--with-colons", "--show-keys", str(pub)],
+                               capture_output=True, text=True).stdout
+        fprs = [l.split(":")[9] for l in shown.splitlines() if l.startswith("fpr:")]
+        if NVIDIA_REPO["fingerprint"] not in fprs:
+            raise ValueError("NVIDIA depo anahtarının parmak izi beklenenle uyuşmuyor; eklenmedi")
+        subprocess.run(["gpg", "--batch", "--yes", "--dearmor", "-o", NVIDIA_REPO["keyring"], str(pub)], check=True)
+    os.chmod(NVIDIA_REPO["keyring"], 0o644)
+    Path(NVIDIA_REPO["list"]).write_text(NVIDIA_REPO["source"] + "\n", encoding="utf-8")
+
+
+def secure_boot_enabled():
+    r = subprocess.run(["mokutil", "--sb-state"], capture_output=True, text=True)
+    return "SecureBoot enabled" in r.stdout
+
+
+def queue_dkms_key_enrollment():
+    """Secure Boot açıkken DKMS'in imzaladığı NVIDIA modülü, DKMS anahtarı onaylanana dek yüklenmez.
+    Anahtar bir sonraki açılışta onaylanmak üzere sıraya alınır; kullanıcıya tek kullanımlık kod gösterilir."""
+    pub = Path("/var/lib/dkms/mok.pub")
+    if not (secure_boot_enabled() and pub.exists() and shutil.which("mokutil")):
+        return None
+    if "is already enrolled" in subprocess.run(["mokutil", "--test-key", str(pub)],
+                                               capture_output=True, text=True).stdout:
+        return None
+    import secrets
+    code = f"{secrets.randbelow(10 ** 6):06d}"
+    with tempfile.TemporaryDirectory() as td:
+        h = Path(td) / "hash"
+        h.write_text(subprocess.run(["mokutil", f"--generate-hash={code}"], capture_output=True,
+                                    text=True, check=True).stdout)
+        subprocess.run(["mokutil", "--import", str(pub), "--hash-file", str(h)], check=True)
+    return code
+
+
+def install_nvidia():
+    check_root()
+    if not (shutil.which("apt-get") and is_mindos_paradise()):
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} NVIDIA kurulumu yalnızca MindOS Paradise'ta desteklenir.")
+        sys.exit(1)
+    if is_live_session():
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} Canlı oturumda sürücü kurulamaz; önce MindOS'u diske kurun.")
+        sys.exit(1)
+    gpus = nvidia_gpus()
+    if not gpus:
+        print(f"{COLOR_YELLOW}Bu bilgisayarda NVIDIA ekran kartı bulunamadı.{COLOR_RESET}")
+        return
+    gens = {nvidia_generation(d) for d, _ in gpus}
+    for _, desc in gpus:
+        print(f"  • {desc}")
+    if gens == {"old"}:
+        print(f"{COLOR_YELLOW}Bu kart için güncel NVIDIA sürücüsü yok (Kepler ve öncesi). MindOS açık kaynak "
+              f"'nouveau' sürücüsünü kullanıyor; ekran ve masaüstü bununla çalışır.{COLOR_RESET}")
+        return
+    env = {**os.environ, **APT_ENV}
+    if "modern" in gens:
+        print(f"{COLOR_GREEN}==>{COLOR_RESET} Yeni nesil NVIDIA kartı: MindOS kernel'i + NVIDIA'nın en yeni sürücüsü")
+        install_system_component("linux-headers")
+        add_nvidia_repo()
+        subprocess.run(["apt-get", "update", "-qq"], env=env, check=False)
+        res = subprocess.run(["apt-get", "install", "-y", *APT_OPTS, "nvidia-open"], env=env)
+    else:
+        print(f"{COLOR_GREEN}==>{COLOR_RESET} Bu kart (GTX 900/1000 kuşağı) için NVIDIA 550 gerekiyor; o da "
+              f"Debian'ın 6.12 LTS kernel'iyle çalışıyor. Bu bilgisayar Debian kernel'ine geçirilecek.")
+        ensure_debian_nonfree()
+        subprocess.run(["apt-get", "update", "-qq"], env=env, check=False)
+        res = subprocess.run(["apt-get", "install", "-y", *APT_OPTS, "linux-image-amd64", "linux-headers-amd64"],
+                             env=env)
+        if res.returncode == 0:
+            # 550 MindOS kernel'inde derlenmez; MindOS başlıkları kalırsa DKMS hata verip kurulumu durdurur
+            headers = subprocess.run(["dpkg-query", "-W", "-f=${Package}\\n", "linux-headers-*-mindos"],
+                                     capture_output=True, text=True).stdout.split()
+            if headers:
+                subprocess.run(["apt-get", "purge", "-y", *APT_OPTS, *headers], env=env)
+            res = subprocess.run(["apt-get", "install", "-y", *APT_OPTS, "nvidia-driver", "firmware-misc-nonfree"],
+                                 env=env)
+        if res.returncode == 0:
+            Path(KERNEL_FLAVOR_FILE).parent.mkdir(parents=True, exist_ok=True)
+            Path(KERNEL_FLAVOR_FILE).write_text("debian\n", encoding="utf-8")
+            images = subprocess.run(["dpkg-query", "-W", "-f=${Package}\\n", "linux-image-*-mindos"],
+                                    capture_output=True, text=True).stdout.split()
+            if images:  # GRUB en yüksek sürümlü kernel'i seçer; MindOS kernel'i kalırsa NVIDIA'sız açılır
+                subprocess.run(["apt-get", "purge", "-y", *APT_OPTS, *images], env=env)
+    if res.returncode != 0:
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} NVIDIA sürücüsü kurulamadı (apt-get çıkış kodu {res.returncode}).")
+        sys.exit(1)
+    code = queue_dkms_key_enrollment()
+    print(f"\n{COLOR_GREEN}✓ NVIDIA sürücüsü kuruldu.{COLOR_RESET} Etkinleşmesi için bilgisayarı yeniden başlatın.")
+    if code:
+        print(f"\n{COLOR_BOLD}Secure Boot açık:{COLOR_RESET} yeniden başlarken mavi bir ekran (MOK Manager) gelecek.\n"
+              f"  'Enroll MOK' → 'Continue' → 'Yes' seçin ve şu kodu girin: {COLOR_BOLD}{code}{COLOR_RESET}\n"
+              f"  Ardından 'Reboot'. Bu bir kez yapılır; NVIDIA modülünün imzası böylece tanınır.")
+
 _index_cache = None
 
 
@@ -582,6 +781,11 @@ def install_from_repo_or_name(pkg_name):
     """Depolarda paket adını arar, indirir, SHA256 doğrular ve kurar"""
     check_root()
     require_pkg_name(pkg_name)
+    if pkg_name in ("nvidia", "nvidia-driver-mindos", "nvidia-driver") and is_mindos_paradise():
+        install_nvidia()
+        return
+    if install_system_component(pkg_name):
+        return
     # Debian tabanlı sistemlerde (MindOS Paradise) önce üreticinin resmi deposu ve
     # sisteme özel derlenmiş Debian paketi denenir; yoksa MindOS .mind deposuna geçilir.
     if shutil.which("apt-get") and install_from_system(pkg_name):
@@ -933,7 +1137,16 @@ def pending_components(comps=None):
         return []
     pending = []
     for name, e in sorted((system_components() if comps is None else comps).items()):
+        if kernel_flavor() == "debian" and re.match(r"linux-(image|headers)-.*-mindos$", name):
+            continue  # NVIDIA 550 için Debian kernel'ine geçmiş bilgisayar
         cur = installed_version(name)
+        if cur is None and e.get("optional"):
+            # ör. kernel başlıkları: yalnızca istenince kurulur; ama eski kernel'in başlıkları kuruluysa
+            # (NVIDIA/DKMS) yeni kernel'in başlıkları da gelir, yoksa sürücü yeni kernel'de derlenemez
+            if not (name.startswith("linux-headers-") and subprocess.run(
+                    ["dpkg-query", "-W", "-f=${db:Status-Abbrev}", "linux-headers-*-mindos"],
+                    capture_output=True, text=True).stdout.count("ii")):
+                continue
         if cur is None or is_newer(str(e["version"]), cur):
             pending.append((name, e, cur))
     return pending
@@ -963,6 +1176,62 @@ APT_OPTS = ["-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--fo
             "-o", "DPkg::Lock::Timeout=300"]
 
 
+def install_system_component(name):
+    """MindOS sistem bileşenini (ör. linux-headers-7.2.10-mindos) imzalı .deb'den kurar.
+    'linux-headers' çalışan MindOS kernel'inin başlıklarıdır (NVIDIA, VirtualBox gibi DKMS modülleri için)."""
+    if not (shutil.which("apt-get") and is_mindos_paradise()):
+        return False
+    if name in ("linux-headers", "kernel-headers", "linux-headers-mindos"):
+        name = f"linux-headers-{os.uname().release}"
+    comps = system_components()
+    if name not in comps and name.startswith("linux-headers-"):
+        update_repos()
+        comps = system_components()
+    e = comps.get(name)
+    if not e:
+        if name.startswith("linux-headers-") and name.endswith("-mindos"):
+            print(f"{COLOR_RED}Hata:{COLOR_RESET} {name} depoda yok. Önce 'sudo mindpkg upgrade' ile kernel'i "
+                  f"güncelleyip bilgisayarı yeniden başlatın.")
+            sys.exit(1)
+        return False
+    print(f"{COLOR_GREEN}==>{COLOR_RESET} MindOS bileşeni kuruluyor: {COLOR_BOLD}{name} {e['version']}{COLOR_RESET}")
+    try:
+        deb = fetch_component(name, e, CACHE_DIR)
+    except Exception as ex:
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} {name} indirilemedi: {ex}")
+        sys.exit(1)
+    res = subprocess.run(["apt-get", "install", "-y", *APT_OPTS, str(deb.resolve())], env={**os.environ, **APT_ENV})
+    deb.unlink(missing_ok=True)
+    if res.returncode != 0:
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} {name} kurulamadı (apt-get çıkış kodu {res.returncode}).")
+        sys.exit(1)
+    print(f"{COLOR_GREEN}✓ {name} {e['version']} kuruldu.{COLOR_RESET}")
+    return True
+
+
+def cleanup_old_kernels():
+    """Yeni MindOS kernel'i kurulunca eskileri kaldırır. En yeni iki kernel (yenisi sorun çıkarırsa
+    GRUB'dan açılacak yedek) ve şu an çalışan kernel kalır; her biri ~100 MB, /boot dolmasın."""
+    import functools
+    out = subprocess.run(["dpkg-query", "-W", "-f=${Package} ${Version} ${db:Status-Abbrev}\n",
+                          "linux-image-*-mindos"], capture_output=True, text=True).stdout
+    installed = [(f[0], f[1]) for f in (l.split() for l in out.splitlines()) if len(f) >= 3 and f[2] == "ii"]
+    if len(installed) < 3:
+        return
+    installed.sort(key=functools.cmp_to_key(lambda a, b: 1 if is_newer(a[1], b[1]) else -1), reverse=True)
+    keep = {installed[0][0], installed[1][0], f"linux-image-{os.uname().release}"}
+    old = [pkg for pkg, _ in installed if pkg not in keep]
+    if not old:
+        return
+    headers = subprocess.run(["dpkg-query", "-W", "-f=${Package} ${db:Status-Abbrev}\n", "linux-headers-*-mindos"],
+                             capture_output=True, text=True).stdout.split("\n")
+    have = {l.split()[0] for l in headers if len(l.split()) >= 2 and l.split()[1] == "ii"}
+    old += [h for h in (p.replace("linux-image-", "linux-headers-", 1) for p in old) if h in have]
+    print(f"  Eski kernel'ler kaldırılıyor: {', '.join(old)}")
+    subprocess.run(["apt-get", "purge", "-y", *APT_OPTS, *old], env={**os.environ, **APT_ENV})
+
+
+
 def upgrade_system_components():
     """Kernel ve MindOS uygulamalarını imzalı .deb paketleriyle günceller (yalnızca MindOS Paradise)"""
     pending = pending_components()
@@ -987,6 +1256,7 @@ def upgrade_system_components():
         else:
             print(f"  {COLOR_RED}⚠ {name} kurulamadı (apt-get çıkış kodu {res.returncode}).{COLOR_RESET}")
     if kernel_updated:
+        cleanup_old_kernels()
         print(f"  {COLOR_YELLOW}Yeni kernel kuruldu; etkinleşmesi için bilgisayarı yeniden başlatın.{COLOR_RESET}")
 
 
@@ -1084,14 +1354,14 @@ def fetch_meta_documents():
         for repo in load_config().get("repositories", []):
             if not repo.get("enabled", True):
                 continue
-            dest = Path(td) / f"{repo['name']}.json.part"  # .part: curl sessiz çalışır
+            dest = Path(td) / f"{repo['name']}.json"
             try:
-                download_with_progress(f"{repo['url']}/system.json", dest)
+                fetch_signed(f"{repo['url']}/system.json", dest, repo.get("signed", True))
                 with open(dest, "r", encoding="utf-8") as f:
                     docs.append(json.load(f))
                 continue
             except Exception:
-                pass
+                pass  # imzasız/bozuk/ulaşılamıyor: son doğrulanmış önbellek kullanılır
             try:
                 with open(Path(REPOS_CACHE) / f"{repo['name']}.json", "r", encoding="utf-8") as f:
                     docs.append(json.load(f))
@@ -1411,6 +1681,8 @@ def apply_offline():
                                *[c["deb"] for c in comps]], comp_progress)
         if rc != 0:
             errors.append(f"MindOS bileşenleri kurulamadı (apt-get {rc})")
+        elif any(c["name"].startswith("linux-image-") for c in comps):
+            cleanup_old_kernels()
         base += len(comps) * w_comp
 
     if n_deb:

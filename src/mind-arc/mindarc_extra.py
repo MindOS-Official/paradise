@@ -19,6 +19,11 @@ import threading
 
 from gi.repository import Gtk, GLib, Adw, Pango
 
+try:
+    import mindos_prefs  # ortak MindOS tercihleri (mindos-apps: /usr/lib/python3/dist-packages)
+except ImportError:
+    mindos_prefs = None
+
 MINDPKG = "/usr/local/bin/mindpkg"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
@@ -146,6 +151,38 @@ TEXTS = {
                        "kurulum açılış ekranında yapılacak. Açık çalışmalarınızı kaydedin.",
                        "Updates will be downloaded and verified, then the computer will restart and install "
                        "them on the boot screen. Save any open work."),
+    "u_notify": ("Güncelleme Bildirimleri", "Update Notifications"),
+    "u_notify_sub": ("Günde bir kez denetlenir; güncelleme varsa bildirim gösterilir",
+                     "Checked once a day; a notification appears when updates are available"),
+    "u_auto_title": ("Otomatik Denetim", "Automatic Check"),
+    "priv_title": ("Gizlilik", "Privacy"),
+    "priv_desc": ("İnternete bilgi gönderen özellikler yalnızca siz açarsanız çalışır",
+                  "Features that send data over the internet only work if you turn them on"),
+    "priv_weather": ("Hava Durumu (Mind Helper)", "Weather (Mind Helper)"),
+    "priv_weather_sub": ("Konumunuz IP adresinizden wttr.in tarafından tahmin edilir",
+                         "wttr.in estimates your location from your IP address"),
+    "priv_search": ("İnternette Arama (Mind Helper)", "Web Search (Mind Helper)"),
+    "priv_search_sub": ("Mind Helper'ın yanıtlayamadığı sorular DuckDuckGo'ya gönderilir",
+                        "Questions Mind Helper cannot answer are sent to DuckDuckGo"),
+    "nv_title": ("NVIDIA Ekran Kartı", "NVIDIA Graphics"),
+    "nv_modern": ("NVIDIA'nın en yeni sürücüsü MindOS kernel'iyle kurulur",
+                  "NVIDIA's latest driver is installed with the MindOS kernel"),
+    "nv_legacy": ("Bu kart NVIDIA 550 sürücüsünü kullanır; bilgisayar Debian'ın 6.12 LTS kernel'ine geçirilir",
+                  "This card uses the NVIDIA 550 driver; the computer switches to Debian's 6.12 LTS kernel"),
+    "nv_old": ("Bu kart için güncel NVIDIA sürücüsü yok; açık kaynak nouveau sürücüsü kullanılıyor",
+               "There is no current NVIDIA driver for this card; the open-source nouveau driver is used"),
+    "nv_install": ("NVIDIA Sürücüsünü Kur", "Install NVIDIA Driver"),
+    "nv_live": ("Canlı oturumdasınız. Sürücü, MindOS diske kurulduktan sonra kurulabilir.",
+                "You are in a live session. The driver can be installed after MindOS is installed to disk."),
+    "nv_running": ("NVIDIA sürücüsü çalışıyor: {ver}", "NVIDIA driver is running: {ver}"),
+    "nv_reboot": ("Sürücü kuruldu; etkinleşmesi için yeniden başlatın", "Driver installed; restart to activate it"),
+    "nv_restart": ("Yeniden Başlat", "Restart"),
+    "nv_confirm": ("NVIDIA sürücüsü kurulsun mu?", "Install the NVIDIA driver?"),
+    "nv_confirm_body": ("Sürücü internetten indirilip kurulacak (birkaç yüz MB). Secure Boot açıksa yeniden "
+                        "başlarken mavi ekranda bir kez onay kodu girmeniz istenecek; kod kurulum çıktısında yazar.",
+                        "The driver will be downloaded and installed (a few hundred MB). If Secure Boot is on, "
+                        "you will enter a one-time code on a blue screen at the next restart; the code is shown "
+                        "in the installation output."),
     "u_prepare_fail": ("Güncelleme hazırlanamadı; ayrıntılar aşağıda.", "The update could not be prepared; see details below."),
     "thumbs_done": ("{n} küçük resim silindi", "{n} thumbnails deleted"),
 }
@@ -643,6 +680,26 @@ class Maintenance:
                 pass
         self.output.buffer.set_text(self.texts.t("thumbs_done", n=n) + "\n")
 
+def pref_switch(texts, key, title, subtitle, icon):
+    """mindos_prefs tercihine bağlı bir anahtar satırı"""
+    row = Adw.SwitchRow()
+    texts.bind(row.set_title, title)
+    texts.bind(row.set_subtitle, subtitle)
+    row.add_prefix(Gtk.Label(label=icon))
+    row.set_active(mindos_prefs.get(key))
+    row.connect("notify::active", lambda r, _p: mindos_prefs.set(key, r.get_active()))
+    return row
+
+
+def build_privacy_group(texts):
+    g = Adw.PreferencesGroup()
+    texts.bind(g.set_title, "priv_title")
+    texts.bind(g.set_description, "priv_desc")
+    g.add(pref_switch(texts, "weather", "priv_weather", "priv_weather_sub", "🌤️"))
+    g.add(pref_switch(texts, "web_search", "priv_search", "priv_search_sub", "🔎"))
+    return g
+
+
 class SystemUpdate:
     """MindOS Paradise sürümü, bekleyen güncellemeler ve "Yeniden Başlat ve Güncelle".
 
@@ -699,6 +756,11 @@ class SystemUpdate:
         self.grp_last = Adw.PreferencesGroup(visible=False)
         texts.bind(self.grp_last.set_title, "u_last_title")
         self.page.add(self.grp_last)
+        if mindos_prefs:
+            g = Adw.PreferencesGroup()
+            texts.bind(g.set_title, "u_auto_title")
+            g.add(pref_switch(texts, "update_notify", "u_notify", "u_notify_sub", "🔔"))
+            self.page.add(g)
         self.page.add(self.output.group)
         self.dynamic_rows = []
         self.check()
@@ -851,6 +913,95 @@ class SystemUpdate:
         self.output.run(["pkexec", MINDPKG, "offline-cancel"], lambda rc: self.check(), self.texts.t("u_cancel"))
 
 
+
+def nvidia_cards():
+    """[(aygıt_no, ad)] NVIDIA ekran kartları"""
+    try:
+        out = subprocess.run(["lspci", "-nn", "-d", "10de:"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return []
+    cards = []
+    for line in out.splitlines():
+        m = re.search(r"\[10de:([0-9a-f]{4})\]", line)
+        if m and re.search(r"\[030[02]\]", line):
+            name = re.findall(r"\[([^\]]*GeForce[^\]]*|[^\]]*RTX[^\]]*|[^\]]*Quadro[^\]]*)\]", line)
+            cards.append((int(m.group(1), 16), name[0] if name else line.split(": ", 1)[-1]))
+    return cards
+
+
+class NvidiaGroup:
+    """Donanım sayfasında NVIDIA kartı ve tek tıkla sürücü kurulumu (mindpkg install nvidia)"""
+
+    def __init__(self, win, texts):
+        self.win, self.texts = win, texts
+        self.output = OutputPanel(texts)
+        self.group = Adw.PreferencesGroup(visible=False)
+        texts.bind(self.group.set_title, "nv_title")
+        self.row = Adw.ActionRow()
+        self.row.add_prefix(Gtk.Label(label="🎮"))
+        self.row.set_subtitle_lines(3)
+        self.button = Gtk.Button(valign=Gtk.Align.CENTER, visible=False)
+        self.button.add_css_class("suggested-action")
+        self.button.connect("clicked", self.on_click)
+        self.row.add_suffix(self.button)
+        self.group.add(self.row)
+        self.state = None
+        threading.Thread(target=lambda: GLib.idle_add(self.show, nvidia_cards()), daemon=True).start()
+
+    def show(self, cards):
+        if not cards:
+            return False
+        self.cards = cards
+        self.group.set_visible(True)
+        self.refresh()
+        return False
+
+    def refresh(self):
+        if not getattr(self, "cards", None):
+            return
+        t = self.texts.t
+        dev, name = self.cards[0]
+        self.row.set_title(GLib.markup_escape_text(name))
+        gen = "modern" if dev >= 0x1E00 else "legacy" if dev >= 0x1340 else "old"
+        try:
+            ver = open("/proc/driver/nvidia/version").readline().split("Kernel Module")[-1].split()[0]
+        except (OSError, IndexError):
+            ver = None
+        installed = system_installed("nvidia-driver")
+        if ver:
+            self.state, sub = "running", t("nv_running", ver=ver)
+        elif installed:
+            self.state, sub = "reboot", t("nv_reboot")
+        elif gen == "old" or os.path.exists("/run/live/medium"):
+            self.state, sub = None, t("nv_old") if gen == "old" else t("nv_live")
+        else:
+            self.state, sub = "install", t("nv_modern" if gen == "modern" else "nv_legacy")
+        self.row.set_subtitle(sub)
+        self.button.set_visible(self.state in ("install", "reboot"))
+        self.button.set_label(t("nv_install") if self.state == "install" else t("nv_restart"))
+
+    def on_click(self, button):
+        if self.state == "reboot":
+            subprocess.Popen(["systemctl", "reboot"])
+            return
+        t = self.texts.t
+        dialog = Adw.MessageDialog(transient_for=self.win, heading=t("nv_confirm"), body=t("nv_confirm_body"))
+        dialog.add_response("cancel", t("u_cancel"))
+        dialog.add_response("go", t("nv_install"))
+        dialog.set_response_appearance("go", Adw.ResponseAppearance.SUGGESTED)
+        dialog.connect("response", lambda d, r: r == "go" and self.install())
+        dialog.present()
+
+    def install(self):
+        self.button.set_sensitive(False)
+
+        def done(rc):
+            self.button.set_sensitive(True)
+            self.refresh()
+
+        self.output.run(["pkexec", MINDPKG, "install", "nvidia"], done, self.texts.t("nv_install"))
+
+
 def build_extra_pages(win):
     """Ana pencereye Paket Merkezi ve Sistem Bakımı sayfalarını ekler"""
     win.extra_texts = ExtraTexts(win)
@@ -860,6 +1011,12 @@ def build_extra_pages(win):
     win.view_stack.add_named(win.extra_packages.page, "packages")
     win.extra_maintenance = Maintenance(win, win.extra_texts)
     win.view_stack.add_named(win.extra_maintenance.page, "maintenance")
+    if hasattr(win, "page_hardware"):  # Donanım → NVIDIA (yalnızca NVIDIA kartı varsa görünür)
+        win.extra_nvidia = NvidiaGroup(win, win.extra_texts)
+        win.page_hardware.add(win.extra_nvidia.group)
+        win.page_hardware.add(win.extra_nvidia.output.group)
+    if mindos_prefs and hasattr(win, "page_appearance"):  # Genel Ayarlar → Gizlilik
+        win.page_appearance.add(build_privacy_group(win.extra_texts))
 
 
 def extra_sidebar_items(win):
@@ -873,3 +1030,5 @@ def update_extra_texts(win):
         win.extra_texts.refresh()
         win.extra_packages.refresh()
         win.extra_updates.refresh()
+        if hasattr(win, "extra_nvidia"):
+            win.extra_nvidia.refresh()

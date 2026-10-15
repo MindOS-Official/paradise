@@ -43,6 +43,48 @@ class MindHelperApp(Gtk.Window):
         self._setup_icon()
         self._build_ui()
         self._start_telemetry_loop()
+        GLib.idle_add(self._ask_privacy_once)
+
+    def _ask_privacy_once(self):
+        """İnternete kişisel veri gönderen özellikler için bir kez açık onay ister (varsayılan kapalı)"""
+        try:
+            import mindos_prefs
+        except Exception:
+            return False
+        if mindos_prefs.is_set("weather") and mindos_prefs.is_set("web_search"):
+            return False
+        tr = os.environ.get("LANG", "").startswith("tr")
+        dialog = Gtk.Dialog(title="Gizlilik" if tr else "Privacy", transient_for=self, modal=True)
+        dialog.add_button("Kaydet" if tr else "Save", Gtk.ResponseType.OK)
+        box = dialog.get_content_area()
+        box.set_spacing(10)
+        for side in ("left", "right", "top", "bottom"):
+            getattr(box, f"set_margin_{side}")(18)
+        intro = Gtk.Label(label=(
+            "Mind Helper'ın bazı özellikleri internete bilgi gönderir. Hangilerini açmak istediğinizi seçin; "
+            "daha sonra Mind Arc → Genel Ayarlar → Gizlilik'ten değiştirebilirsiniz." if tr else
+            "Some Mind Helper features send data over the internet. Choose which ones to turn on; you can "
+            "change this later in Mind Arc → General Settings → Privacy."))
+        intro.set_line_wrap(True)
+        intro.set_xalign(0)
+        intro.set_max_width_chars(60)
+        box.pack_start(intro, False, False, 0)
+        weather = Gtk.CheckButton(label=(
+            "Hava durumu: konumunuz IP adresinizden wttr.in tarafından tahmin edilir" if tr else
+            "Weather: wttr.in estimates your location from your IP address"))
+        search = Gtk.CheckButton(label=(
+            "İnternette arama: yanıtı bilinmeyen sorularınız DuckDuckGo'ya gönderilir" if tr else
+            "Web search: questions Mind Helper cannot answer are sent to DuckDuckGo"))
+        weather.set_active(mindos_prefs.get("weather"))
+        search.set_active(mindos_prefs.get("web_search"))
+        box.pack_start(weather, False, False, 0)
+        box.pack_start(search, False, False, 0)
+        dialog.show_all()
+        dialog.run()
+        mindos_prefs.set("weather", weather.get_active())
+        mindos_prefs.set("web_search", search.get_active())
+        dialog.destroy()
+        return False
 
     def _load_css(self):
         css_provider = Gtk.CssProvider()
@@ -478,6 +520,23 @@ class MindHelperApp(Gtk.Window):
         body_box.pack_start(body_scroll, True, True, 0)
         form_card.pack_start(body_box, True, True, 0)
 
+        # Privacy: what is sent and where (KVKK/GDPR)
+        tr = os.environ.get("LANG", "").startswith("tr")
+        self.include_system_chk = Gtk.CheckButton(
+            label="Sistem bilgilerini ekle (işletim sistemi, kernel, çalışma süresi, RAM)" if tr
+            else "Include system info (OS, kernel, uptime, RAM)")
+        self.include_system_chk.set_active(False)
+        form_card.pack_start(self.include_system_chk, False, False, 0)
+        privacy_lbl = Gtk.Label(
+            label=("Mesajınız ve takma adınız formsubmit.co aracılığıyla MindOS geliştiricisinin e-posta "
+                   "kutusuna iletilir. Başka hiçbir bilgi gönderilmez." if tr else
+                   "Your message and alias are relayed through formsubmit.co to the MindOS developer's "
+                   "mailbox. Nothing else is sent."))
+        privacy_lbl.set_line_wrap(True)
+        privacy_lbl.set_xalign(0)
+        privacy_lbl.get_style_context().add_class("stat-label")
+        form_card.pack_start(privacy_lbl, False, False, 0)
+
         # Submit Action
         action_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.submit_btn = Gtk.Button(label="✧ Transmit Communion to Developer")
@@ -531,11 +590,12 @@ class MindHelperApp(Gtk.Window):
             dialog.destroy()
             return
 
+        include_system = self.include_system_chk.get_active()
         self.submit_btn.set_sensitive(False)
         self.glow_bar.start()
 
         def worker():
-            success, response_msg = submit_feedback(category, subject, message, alias)
+            success, response_msg = submit_feedback(category, subject, message, alias, include_system)
             GLib.idle_add(lambda: self._finish_feedback_submission(success, response_msg))
 
         threading.Thread(target=worker, daemon=True).start()

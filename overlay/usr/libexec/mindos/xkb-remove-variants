@@ -1,0 +1,56 @@
+#!/usr/bin/python3
+"""MindOS: Türkiye klavye düzeninden Kürtçe varyantları (ku, ku_f, ku_alt) çıkarır.
+
+Kurulum programı (Calamares) ve GNOME klavye listesi xkb-data'nın kural dosyalarını okur.
+Dosyalar xkb-data paketine ait olduğu için her apt işleminden sonra yeniden uygulanır
+(/etc/apt/apt.conf.d/80mindos-xkb); zaten uygulanmışsa hiçbir şey değiştirmez.
+"""
+import os
+import re
+
+RULES = "/usr/share/X11/xkb/rules"
+LAYOUT, VARIANTS = "tr", ("ku", "ku_f", "ku_alt")
+
+
+def filter_xml(path):
+    s = open(path, encoding="utf-8").read()
+    m = re.search(r"<layout>\s*<configItem>\s*<name>%s</name>.*?</layout>" % LAYOUT, s, re.S)
+    if not m:
+        return False
+    block = m.group(0)
+    new = re.sub(r"\s*<variant>\s*<configItem>\s*<name>(%s)</name>.*?</variant>" % "|".join(VARIANTS),
+                 "", block, flags=re.S)
+    if new == block:
+        return False
+    write(path, s[:m.start()] + new + s[m.end():])
+    return True
+
+
+def filter_lst(path):
+    lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
+    keep = [l for l in lines if not re.match(r"\s+(%s)\s+%s: " % ("|".join(VARIANTS), LAYOUT), l)]
+    if len(keep) == len(lines):
+        return False
+    write(path, "".join(keep))
+    return True
+
+
+def write(path, text):
+    tmp = path + ".mindos-tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
+changed = []
+for name in ("base.xml", "evdev.xml"):
+    p = os.path.join(RULES, name)
+    if os.path.exists(p) and filter_xml(p):
+        changed.append(name)
+for name in ("base.lst", "evdev.lst"):
+    p = os.path.join(RULES, name)
+    if os.path.exists(p) and filter_lst(p):
+        changed.append(name)
+if changed:
+    print("MindOS: klavye listesi güncellendi:", ", ".join(changed))
