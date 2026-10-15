@@ -35,6 +35,7 @@ FILES=(
   usr/libexec/mindos/xkb-remove-variants
   etc/apt/apt.conf.d/80mindos-xkb
   usr/lib/systemd/system-sleep/mindos-touchpad
+  etc/default/grub.d/10-mindos-osprober.cfg
 )
 mkdir -p "$P/DEBIAN"
 for f in "${FILES[@]}"; do
@@ -64,7 +65,7 @@ Description: MindOS Paradise applications and desktop defaults
  shared MindOS files.
 CTL
 printf '%s\n' /etc/xdg/autostart/mindhelper-autostart.desktop /etc/dconf/db/local.d/20-mindos-shell \
-    /etc/apt/apt.conf.d/80mindos-xkb > "$P/DEBIAN/conffiles"
+    /etc/apt/apt.conf.d/80mindos-xkb /etc/default/grub.d/10-mindos-osprober.cfg > "$P/DEBIAN/conffiles"
 # /usr/lib/os-release (MindOS Paradise kimliği) Debian'ın base-files paketine ait; bir Debian ara
 # sürümü onu "Debian GNU/Linux" ile değiştirmesin diye base-files'ın kopyası kenara yönlendirilir.
 cat > "$P/DEBIAN/preinst" <<'PR'
@@ -93,6 +94,13 @@ if [ "$1" = configure ]; then
     [ -d /run/systemd/system ] && systemctl daemon-reload || true
     /usr/libexec/mindos/mindos-avatar || true
     /usr/libexec/mindos/xkb-remove-variants || true
+    # Windows'un GRUB menüsünde görünmesi için (os-prober artık açık) menü bir kez yeniden üretilir
+    if [ -f /boot/grub/grub.cfg ] && [ -d /run/systemd/system ] && [ ! -e /run/live/medium ] \
+       && [ ! -e /var/lib/mindos/osprober-grub-updated ]; then
+        mkdir -p /var/lib/mindos
+        timeout 180 update-grub >/dev/null 2>&1 || true
+        : > /var/lib/mindos/osprober-grub-updated
+    fi
 fi
 exit 0
 PI
