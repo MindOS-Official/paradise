@@ -190,6 +190,10 @@ TEXTS = {
                 "or USB tethering from your phone."),
     "bc_ok": ("Wi-Fi kartı çalışıyor ({drv})", "Wi-Fi card is working ({drv})"),
     "bc_install": ("Wi-Fi Sürücüsünü Kur", "Install Wi-Fi Driver"),
+    "u_preparing": ("Güncellemeler indiriliyor ve doğrulanıyor… Bitince bilgisayar yeniden başlayacak. "
+                    "Ayrıntılar aşağıda, İşlem Çıktısı'nda.",
+                    "Downloading and verifying updates… The computer will restart when done. "
+                    "Details below in Operation Output."),
     "u_prepare_fail": ("Güncelleme hazırlanamadı; ayrıntılar aşağıda.", "The update could not be prepared; see details below."),
     "thumbs_done": ("{n} küçük resim silindi", "{n} thumbnails deleted"),
 }
@@ -902,8 +906,13 @@ class SystemUpdate:
     def prepare(self):
         self.btn_install.set_sensitive(False)
         self.btn_check.set_sensitive(False)
+        self.lbl_status.set_label(self.texts.t("u_preparing"))
+        self.spinner.start()
+        # ilerleme sayfanın altında; odak çıktıya verilince sayfa oraya kayar
+        GLib.timeout_add(300, lambda: self.output.view.grab_focus() and False)
 
         def done(rc):
+            self.spinner.stop()
             self.btn_install.set_sensitive(True)
             self.btn_check.set_sensitive(True)
             if rc == 0 and os.path.islink("/system-update"):

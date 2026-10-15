@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.8.1"
+VERSION = "1.8.2"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -752,11 +752,30 @@ def install_broadcom():
             'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT ibt=warn"\n', encoding="utf-8")
         subprocess.run(["update-grub"], check=False)
     code = queue_dkms_key_enrollment()
-    loaded = subprocess.run(["modprobe", "wl"], capture_output=True).returncode == 0 and not ibt_cpu and not code
-    if loaded:
-        print(f"\n{COLOR_GREEN}✓ Broadcom Wi-Fi sürücüsü (wl) kuruldu ve yüklendi; ağlar birkaç saniye içinde görünür.{COLOR_RESET}")
-    else:
-        print(f"\n{COLOR_GREEN}✓ Broadcom Wi-Fi sürücüsü (wl) kuruldu.{COLOR_RESET} Etkinleşmesi için bilgisayarı yeniden başlatın.")
+    if not code and not ibt_cpu:
+        # açık kaynak Broadcom sürücüleri kartı tutuyorsa wl bağlanamaz; önce boşaltılır
+        for mod in ("b43", "b43legacy", "brcmsmac", "brcmfmac", "bcma", "ssb"):
+            subprocess.run(["modprobe", "-r", mod], capture_output=True)
+        r = subprocess.run(["modprobe", "wl"], capture_output=True, text=True)
+        if r.returncode == 0:
+            import time
+            time.sleep(3)
+            ifaces = [n for n in os.listdir("/sys/class/net") if os.path.isdir(f"/sys/class/net/{n}/wireless")]
+            if ifaces:
+                print(f"\n{COLOR_GREEN}✓ Broadcom Wi-Fi sürücüsü (wl) çalışıyor: {', '.join(ifaces)}. "
+                      f"Ağlar birkaç saniye içinde görünür.{COLOR_RESET}")
+                return
+            print(f"\n{COLOR_YELLOW}⚠ wl yüklendi ama kablosuz arabirim oluşmadı. Bilgisayarı yeniden başlatın; "
+                  f"sorun sürerse 'sudo dmesg | grep -i wl' çıktısını MindOS ekibine iletin.{COLOR_RESET}")
+            return
+        err = (r.stderr or "").strip()
+        if "rejected" in err.lower() or "Key" in err:
+            print(f"\n{COLOR_YELLOW}⚠ Secure Boot modülün imzasını henüz tanımıyor. Bilgisayarı yeniden başlatın; mavi "
+                  f"ekranda 'Enroll MOK' seçip kodu girin (kod yoksa: sudo mindpkg install broadcom).{COLOR_RESET}")
+            return
+        print(f"\n{COLOR_YELLOW}⚠ wl şimdi yüklenemedi ({err or 'bilinmeyen hata'}). Bilgisayarı yeniden başlatın.{COLOR_RESET}")
+        return
+    print(f"\n{COLOR_GREEN}✓ Broadcom Wi-Fi sürücüsü (wl) kuruldu.{COLOR_RESET} Etkinleşmesi için bilgisayarı yeniden başlatın.")
     if code:
         print(f"\n{COLOR_BOLD}Secure Boot açık:{COLOR_RESET} yeniden başlarken mavi bir ekran (MOK Manager) gelecek.\n"
               f"  'Enroll MOK' → 'Continue' → 'Yes' seçin ve şu kodu girin: {COLOR_BOLD}{code}{COLOR_RESET}\n"
