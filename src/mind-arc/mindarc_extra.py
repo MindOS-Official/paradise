@@ -155,6 +155,11 @@ TEXTS = {
     "u_notify_sub": ("Günde bir kez denetlenir; güncelleme varsa bildirim gösterilir",
                      "Checked once a day; a notification appears when updates are available"),
     "u_auto_title": ("Otomatik Denetim", "Automatic Check"),
+    "sec_title": ("Güvenlik", "Security"),
+    "sec_fw": ("Güvenlik Duvarı", "Firewall"),
+    "sec_fw_sub": ("Dışarıdan gelen bağlantıları engeller, giden bağlantılar serbesttir. Yerel ağda oyun "
+                   "sunucusu açarken kapatabilirsiniz", "Blocks incoming connections; outgoing traffic is not "
+                   "affected. Turn it off to host a game on your local network"),
     "priv_title": ("Gizlilik", "Privacy"),
     "priv_desc": ("İnternete bilgi gönderen özellikler yalnızca siz açarsanız çalışır",
                   "Features that send data over the internet only work if you turn them on"),
@@ -711,6 +716,43 @@ def build_privacy_group(texts):
     return g
 
 
+FIREWALL_UNIT = "nftables.service"  # kurallar: /etc/nftables.conf
+
+
+def firewall_enabled():
+    r = subprocess.run(["systemctl", "is-enabled", FIREWALL_UNIT], capture_output=True, text=True)
+    return r.stdout.strip() == "enabled"
+
+
+def build_security_group(texts):
+    if not os.path.exists("/usr/lib/systemd/system/" + FIREWALL_UNIT):
+        return None
+    g = Adw.PreferencesGroup()
+    texts.bind(g.set_title, "sec_title")
+    row = Adw.SwitchRow()
+    texts.bind(row.set_title, "sec_fw")
+    texts.bind(row.set_subtitle, "sec_fw_sub")
+    row.add_prefix(Gtk.Label(label="🧱"))
+    row.set_active(firewall_enabled())
+
+    def on_toggled(r, _p):
+        want = r.get_active()
+        if want == firewall_enabled():
+            return
+
+        def worker():
+            rc = subprocess.run(["pkexec", "systemctl", "enable" if want else "disable", "--now",
+                                 FIREWALL_UNIT]).returncode
+            if rc != 0:  # yetki verilmedi: anahtarı gerçek duruma geri al
+                GLib.idle_add(r.set_active, firewall_enabled())
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    row.connect("notify::active", on_toggled)
+    g.add(row)
+    return g
+
+
 class SystemUpdate:
     """MindOS Paradise sürümü, bekleyen güncellemeler ve "Yeniden Başlat ve Güncelle".
 
@@ -1098,6 +1140,10 @@ def build_extra_pages(win):
         win.page_hardware.add(win.extra_nvidia.output.group)
     if mindos_prefs and hasattr(win, "page_appearance"):  # Genel Ayarlar → Gizlilik
         win.page_appearance.add(build_privacy_group(win.extra_texts))
+    if hasattr(win, "page_appearance"):  # Genel Ayarlar → Güvenlik
+        sec = build_security_group(win.extra_texts)
+        if sec:
+            win.page_appearance.add(sec)
 
 
 def extra_sidebar_items(win):

@@ -37,6 +37,8 @@ FILES=(
   usr/lib/systemd/system-sleep/mindos-touchpad
   etc/default/grub.d/10-mindos-osprober.cfg
   usr/libexec/mindos/fix-boot-order
+  usr/lib/systemd/system/apt-daily.service.d/mindos-live.conf
+  usr/lib/systemd/system/apt-daily-upgrade.service.d/mindos-live.conf
 )
 mkdir -p "$P/DEBIAN"
 for f in "${FILES[@]}"; do
@@ -55,7 +57,7 @@ Version: $VER
 Architecture: all
 Maintainer: MindOS Team <https://github.com/MindOS-Official>
 Installed-Size: $SIZE
-Depends: rfkill, python3, python3-gi, python3-cairo, python3-psutil, python3-requests, gir1.2-gtk-3.0, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-notify-0.7, pkexec
+Depends: rfkill, nftables, unattended-upgrades, python3, python3-gi, python3-cairo, python3-psutil, python3-requests, gir1.2-gtk-3.0, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-notify-0.7, pkexec
 Section: misc
 Priority: optional
 Homepage: https://mindos-official.github.io/mindos_/
@@ -66,7 +68,8 @@ Description: MindOS Paradise applications and desktop defaults
  shared MindOS files.
 CTL
 printf '%s\n' /etc/xdg/autostart/mindhelper-autostart.desktop /etc/dconf/db/local.d/20-mindos-shell \
-    /etc/apt/apt.conf.d/80mindos-xkb /etc/default/grub.d/10-mindos-osprober.cfg > "$P/DEBIAN/conffiles"
+    /etc/apt/apt.conf.d/80mindos-xkb /etc/default/grub.d/10-mindos-osprober.cfg \
+    > "$P/DEBIAN/conffiles"
 # /usr/lib/os-release (MindOS Paradise kimliği) Debian'ın base-files paketine ait; bir Debian ara
 # sürümü onu "Debian GNU/Linux" ile değiştirmesin diye base-files'ın kopyası kenara yönlendirilir.
 cat > "$P/DEBIAN/preinst" <<'PR'
@@ -95,6 +98,12 @@ if [ "$1" = configure ]; then
     [ -d /run/systemd/system ] && systemctl daemon-reload || true
     /usr/libexec/mindos/mindos-avatar || true
     /usr/libexec/mindos/xkb-remove-variants || true
+    # Otomatik güvenlik güncellemeleri varsayılan olarak açık (Mind Arc → Bakım'dan kapatıldıysa dosya
+    # vardır ve dokunulmaz)
+    if [ ! -e /etc/apt/apt.conf.d/20auto-upgrades ]; then
+        printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
+            > /etc/apt/apt.conf.d/20auto-upgrades
+    fi
     # Bozuk bir önceki kurulumdan kalan UEFI kaydı MindOS'un önündeyse (grub rescue) MindOS başa alınır
     if [ -d /run/systemd/system ] && ! systemd-detect-virt --chroot --quiet && [ ! -e /run/live/medium ] && [ ! -e /var/lib/mindos/boot-order-checked ]; then
         mkdir -p /var/lib/mindos

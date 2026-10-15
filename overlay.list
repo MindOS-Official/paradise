@@ -89,6 +89,11 @@ etc/apt/apt.conf.d/80mindos-xkb
 usr/lib/systemd/system-sleep/mindos-touchpad
 etc/default/grub.d/10-mindos-osprober.cfg
 usr/libexec/mindos/fix-boot-order
+usr/lib/systemd/system/apt-daily.service.d/mindos-live.conf
+usr/lib/systemd/system/apt-daily-upgrade.service.d/mindos-live.conf
+etc/apt/apt.conf.d/20auto-upgrades
+etc/apt/sources.list.d/mindos-backports.sources
+etc/apt/preferences.d/mindos-firmware
 
 # --- Güvenlik, bellek ve performans
 etc/sysctl.d/80-mindos-hardening.conf

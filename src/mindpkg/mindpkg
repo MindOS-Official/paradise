@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.8.3"
+VERSION = "1.8.4"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -131,6 +131,49 @@ def safe_member_path(member):
     if any(part == ".." for part in clean.split("/")):
         raise ValueError(f"güvensiz arşiv yolu: {member}")
     return "/" + clean.rstrip("/")
+
+
+def validate_files_archive(archive):
+    """files.tar.zst üyelerini denetler, kurulacak mutlak yolları döndürür.
+
+    Reddedilenler: '..' içeren yollar; aygıt dosyaları; paket dışındaki bir dosyaya sabit bağlantı
+    (ör. /etc/shadow); arşivdeki bir sembolik bağlantının *içine* yazılan üyeler (bağlantı /usr/bin'i
+    gösterip ardından 'bağlantı/sudo' yazmak dpkg dosya denetimini atlatıp sistem dosyasının üzerine yazardı)."""
+    import tarfile
+    proc = subprocess.Popen(["zstd", "-dcq", str(archive)], stdout=subprocess.PIPE)
+    paths, links, regular, hardlinks = [], set(), set(), []
+    try:
+        with tarfile.open(fileobj=proc.stdout, mode="r|") as tf:
+            for m in tf:
+                p = safe_member_path(m.name)
+                if not p:
+                    continue
+                if m.ischr() or m.isblk():
+                    raise ValueError(f"aygıt dosyası: {m.name}")
+                if m.islnk():
+                    target = safe_member_path(m.linkname)
+                    hardlinks.append((m.name, target))
+                if m.issym():
+                    links.add(p)
+                elif m.isfile():
+                    regular.add(p)
+                paths.append(p)
+    except tarfile.TarError as e:
+        raise ValueError(f"arşiv okunamadı: {e}")
+    finally:
+        proc.stdout.close()
+        if proc.wait() != 0:
+            raise ValueError("arşiv açılamadı (zstd)")
+    for name, target in hardlinks:
+        if target not in regular:
+            raise ValueError(f"paket dışına sabit bağlantı: {name} -> {target}")
+    for p in paths:
+        parent = p.rsplit("/", 1)[0]
+        while parent:
+            if parent in links:
+                raise ValueError(f"sembolik bağlantı üzerinden yazma: {p}")
+            parent = parent.rsplit("/", 1)[0]
+    return paths
 
 
 # Kaldırırken asla silinmeyecek dizinler
@@ -363,9 +406,8 @@ def install_mind_file(file_path):
         # Sistem (dpkg) dosyalarının üzerine yazma kontrolü - kancalardan önce
         files_archive = Path(tmpdir) / "files.tar.zst"
         if files_archive.exists():
-            listing = subprocess.check_output(["tar", "--zstd", "-tf", str(files_archive)], text=True)
             try:
-                paths = [p for p in (safe_member_path(l) for l in listing.splitlines()) if p]
+                paths = validate_files_archive(files_archive)
             except ValueError as e:
                 print(f"{COLOR_RED}Hata:{COLOR_RESET} Paket reddedildi: {e}")
                 sys.exit(1)
@@ -389,11 +431,7 @@ def install_mind_file(file_path):
         files_archive = Path(tmpdir) / "files.tar.zst"
         installed_files = []
         if files_archive.exists():
-            tar_list = subprocess.check_output(["tar", "--zstd", "-tf", str(files_archive)], text=True)
-            for line in tar_list.splitlines():
-                p = safe_member_path(line)
-                if p:
-                    installed_files.append(p)
+            installed_files = list(paths)
 
             subprocess.run(["tar", "--zstd", "-xf", str(files_archive), "-C", "/",
                             "--no-same-owner", "--no-overwrite-dir"], check=True)
@@ -543,6 +581,45 @@ NVIDIA_REPO = {
     "fingerprint": "02182E60104FCDC26EAE1B8597A5D4CB8793F200",
 }
 KERNEL_FLAVOR_FILE = "/etc/mindos/kernel"
+# Yeni donanımın (RTX 50, yeni AMD/Intel ekran kartları, Wi-Fi) yazılım dosyaları trixie'ye gelmez, Debian'ın
+# backports'unda güncellenir. Backports'tan yalnızca firmware-* paketleri otomatik alınır, gerisi trixie'de kalır.
+FIRMWARE_BACKPORTS = {
+    "/etc/apt/sources.list.d/mindos-backports.sources": """# MindOS: Debian backports (yalnızca donanım yazılımı otomatik; bkz. /etc/apt/preferences.d/mindos-firmware)
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: trixie-backports
+Components: main non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+""",
+    "/etc/apt/preferences.d/mindos-firmware": """# MindOS: backports'tan yalnızca donanım yazılımı (firmware-*) paketleri yükseltilir
+Package: *
+Pin: release n=trixie-backports
+Pin-Priority: 100
+
+Package: firmware-*
+Pin: release n=trixie-backports
+Pin-Priority: 500
+""",
+}
+
+
+def ensure_firmware_backports():
+    """Backports kaynağını ve yalnızca firmware-* için önceliği ekler; değiştiyse True"""
+    changed = False
+    for path, text in FIRMWARE_BACKPORTS.items():
+        p = Path(path)
+        try:
+            if p.read_text(encoding="utf-8") == text:
+                continue
+        except OSError:
+            pass
+        if not Path("/usr/share/keyrings/debian-archive-keyring.gpg").exists():
+            return False
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        os.chmod(p, 0o644)
+        changed = True
+    return changed
 
 
 def kernel_flavor():
@@ -651,6 +728,7 @@ def install_nvidia():
               f"'nouveau' sürücüsünü kullanıyor; ekran ve masaüstü bununla çalışır.{COLOR_RESET}")
         return
     env = {**os.environ, **APT_ENV}
+    ensure_firmware_backports()  # RTX 50 (Blackwell) GSP dosyaları yalnızca backports'ta
     if "modern" in gens:
         print(f"{COLOR_GREEN}==>{COLOR_RESET} Yeni nesil NVIDIA kartı: MindOS kernel'i + NVIDIA'nın en yeni sürücüsü")
         install_system_component("linux-headers")
@@ -1470,6 +1548,7 @@ def upgrade_system_packages():
         return
     print(f"{COLOR_GREEN}==>{COLOR_RESET} Sistem paketleri güncelleniyor (apt)...")
     env = {**os.environ, **APT_ENV}
+    ensure_firmware_backports()
     subprocess.run(["apt-get", "update", "-qq"], env=env, check=False)
     res = subprocess.run(["apt-get", "-y", *APT_OPTS, "--with-new-pkgs", "upgrade"], env=env)
     if res.returncode != 0:
@@ -1665,6 +1744,7 @@ def prepare_offline(args):
             print(f"    {COLOR_GREEN}✓ indirildi, imza doğrulandı{COLOR_RESET}")
 
         print(f"{COLOR_GREEN}==>{COLOR_RESET} Debian paketleri denetleniyor (apt)...")
+        ensure_firmware_backports()
         subprocess.run(["apt-get", "update", "-qq"], env=env, check=False)
         if comps:  # bileşenlerin yeni bağımlılıkları da önceden insin
             r = subprocess.run(["apt-get", "install", "-d", "-y", *APT_OPTS, *[c["deb"] for c in comps]], env=env)
@@ -1968,6 +2048,10 @@ def main():
     elif cmd == "offline-cancel":
         check_root()
         cancel_offline()
+
+    elif cmd == "firmware-repo":  # ISO derlemesi ve mindos-apps kurulumu çağırır
+        check_root()
+        ensure_firmware_backports()
 
     elif cmd in ["version", "--version", "-v"]:
         print(VERSION)
