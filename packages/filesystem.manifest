@@ -611,7 +611,7 @@ libexempi8	2.6.6-2
 libexif12	0.6.25-1+deb13u1
 libexiv2-28	0.28.5+dfsg-1
 libexiv2-data	0.28.5+dfsg-1
-libexpat1	2.8.3-1~deb13u1
+libexpat1	2.9.0-1~deb13u1
 libext2fs2t64	1.47.2-3+b12
 libexttextcat-2.0-0	3.4.7-1+b1
 libexttextcat-data	3.4.7-1
@@ -833,8 +833,8 @@ libjson-glib-1.0-0	1.10.6+ds-2
 libjson-glib-1.0-common	1.10.6+ds-2
 libjson-perl	4.10000-1
 libjson-xs-perl	4.040-1~deb13u1
-libjxl-gdk-pixbuf	0.11.2-0.1~deb13u2
-libjxl0.11	0.11.2-0.1~deb13u2
+libjxl-gdk-pixbuf	0.11.2-0.1~deb13u3
+libjxl0.11	0.11.2-0.1~deb13u3
 libjxr-tools	1.2~git20170615.f752187-5.3
 libjxr0t64	1.2~git20170615.f752187-5.3
 libk5crypto3	1.21.3-5+deb13u1
@@ -1509,7 +1509,7 @@ mesa-utils-bin	9.0.0-2+b2
 mesa-va-drivers	25.0.7-2+deb13u1
 mesa-vdpau-drivers	25.0.7-2+deb13u1
 mesa-vulkan-drivers	25.0.7-2+deb13u1
-mindos-apps	2026.10.15.6
+mindos-apps	2026.10.16.1
 mobile-broadband-provider-info	20250613-2
 modemmanager	1.24.0-1+deb13u1
 mokutil	0.7.2-1

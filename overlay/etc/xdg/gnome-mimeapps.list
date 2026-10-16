@@ -1,0 +1,27 @@
+# MindOS: arşivlere çift tıklanınca içerik Arşiv Yöneticisi'nde listelenir, kendiliğinden diske çıkarılmaz.
+# (GNOME varsayılanı Dosyalar'dı ve arşivi doğrudan çıkarıyordu; zip bombası diski doldurabilirdi.)
+[Default Applications]
+application/bzip2=org.gnome.FileRoller.desktop
+application/gzip=org.gnome.FileRoller.desktop
+application/vnd.rar=org.gnome.FileRoller.desktop
+application/x-7z-compressed-tar=org.gnome.FileRoller.desktop
+application/x-7z-compressed=org.gnome.FileRoller.desktop
+application/x-bzip-compressed-tar=org.gnome.FileRoller.desktop
+application/x-bzip=org.gnome.FileRoller.desktop
+application/x-compress=org.gnome.FileRoller.desktop
+application/x-compressed-tar=org.gnome.FileRoller.desktop
+application/x-cpio=org.gnome.FileRoller.desktop
+application/x-gzip=org.gnome.FileRoller.desktop
+application/x-lha=org.gnome.FileRoller.desktop
+application/x-lzip-compressed-tar=org.gnome.FileRoller.desktop
+application/x-lzip=org.gnome.FileRoller.desktop
+application/x-lzma-compressed-tar=org.gnome.FileRoller.desktop
+application/x-lzma=org.gnome.FileRoller.desktop
+application/x-tar=org.gnome.FileRoller.desktop
+application/x-tarz=org.gnome.FileRoller.desktop
+application/x-xar=org.gnome.FileRoller.desktop
+application/x-xz-compressed-tar=org.gnome.FileRoller.desktop
+application/x-xz=org.gnome.FileRoller.desktop
+application/x-zstd-compressed-tar=org.gnome.FileRoller.desktop
+application/zip=org.gnome.FileRoller.desktop
+application/zstd=org.gnome.FileRoller.desktop

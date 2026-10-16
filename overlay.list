@@ -35,6 +35,8 @@ usr/share/pixmaps/debian-logo.png
 usr/share/pixmaps/install-debian.png
 etc/xdg/fastfetch/config.jsonc
 etc/xdg/fastfetch/logo.txt
+etc/xdg/fastfetch/logo-paradise.txt
+etc/xdg/gnome-mimeapps.list
 etc/profile.d/fastfetch.sh
 etc/bash.bashrc
 usr/local/bin/fastfetch

@@ -39,6 +39,9 @@ FILES=(
   usr/libexec/mindos/fix-boot-order
   usr/lib/systemd/system/apt-daily.service.d/mindos-live.conf
   usr/lib/systemd/system/apt-daily-upgrade.service.d/mindos-live.conf
+  etc/xdg/gnome-mimeapps.list
+  etc/xdg/fastfetch/config.jsonc
+  etc/xdg/fastfetch/logo-paradise.txt
 )
 mkdir -p "$P/DEBIAN"
 for f in "${FILES[@]}"; do
@@ -69,6 +72,7 @@ Description: MindOS Paradise applications and desktop defaults
 CTL
 printf '%s\n' /etc/xdg/autostart/mindhelper-autostart.desktop /etc/dconf/db/local.d/20-mindos-shell \
     /etc/apt/apt.conf.d/80mindos-xkb /etc/default/grub.d/10-mindos-osprober.cfg \
+    /etc/xdg/gnome-mimeapps.list /etc/xdg/fastfetch/config.jsonc /etc/xdg/fastfetch/logo-paradise.txt \
     > "$P/DEBIAN/conffiles"
 # /usr/lib/os-release (MindOS Paradise kimliği) Debian'ın base-files paketine ait; bir Debian ara
 # sürümü onu "Debian GNU/Linux" ile değiştirmesin diye base-files'ın kopyası kenara yönlendirilir.
@@ -77,6 +81,12 @@ cat > "$P/DEBIAN/preinst" <<'PR'
 set -e
 if [ "$1" = install ] || [ "$1" = upgrade ]; then
     dpkg-divert --package mindos-apps --no-rename --divert /usr/lib/os-release.debian --add /usr/lib/os-release >/dev/null
+    # fastfetch ayarı 1.0.2'ye kadar ISO'dan geliyordu (paketsiz). Kullanıcı değiştirmediyse kaldırılır ki
+    # dpkg yenisini (mavi lotus logosu) kursun; değiştirdiyse dokunulmaz.
+    f=/etc/xdg/fastfetch/config.jsonc
+    if [ -f "$f" ] && [ "$(md5sum < "$f" | cut -d' ' -f1)" = 130635fd79ef6f8f0079045e9dfc5035 ]; then
+        rm -f "$f"
+    fi
 fi
 exit 0
 PR
