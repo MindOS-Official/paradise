@@ -55,6 +55,7 @@ done
 # --- Kernel, Secure Boot (yalnızca betikler ve herkese açık sertifikalar)
 copy "$B/kernel/build-btf.sh" kernel/
 copy "$B/kernel/update-kernel.sh" kernel/
+copy "$B/kernel/LOCKDOWN-TODO.md" kernel/
 copy "$B/kernel/config-mindos" kernel/
 copy "$B/kernel/config-7.2.10-mindos" kernel/
 cp "$R/boot/config-7.2.10-mindos" kernel/config-7.2.10-mindos.shipped  # ISO'daki kernel'in birebir ayarı
