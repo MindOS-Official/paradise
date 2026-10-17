@@ -14,7 +14,8 @@ update-notifier-enabled=false
 pinned-apps=[{'id': 'firefox-esr.desktop'}, {'id': 'org.gnome.Nautilus.desktop'}, {'id': 'org.gnome.Terminal.desktop'}, {'id': 'org.mindos.mind_arc.desktop'}, {'id': 'mindhelper.desktop'}, {'id': 'libreoffice-writer.desktop'}, {'id': 'org.gnome.Settings.desktop'}]
 
 [org/gnome/shell/extensions/dash-to-dock]
-show-show-apps-button=false
+# Uygulamalar düğmesi dock'ta (ArcMenu da duruyor)
+show-show-apps-button=true
 
 [org/gnome/desktop/interface]
 enable-hot-corners=false
@@ -36,3 +37,10 @@ static-blur=true
 # Pencere düğmeleri: alta alma, tam ekran ve kapatma (GNOME varsayılanı yalnızca kapatma)
 [org/gnome/desktop/wm/preferences]
 button-layout='appmenu:minimize,maximize,close'
+
+# Windows'taki gibi kısayollar: Super+D masaüstünü gösterir, Super+Shift+S bölge seçmeli ekran görüntüsü
+[org/gnome/desktop/wm/keybindings]
+show-desktop=['<Super>d']
+
+[org/gnome/shell/keybindings]
+show-screenshot-ui=['Print', '<Shift><Super>s']

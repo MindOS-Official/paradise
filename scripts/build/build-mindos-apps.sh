@@ -122,10 +122,11 @@ if [ "$1" = configure ]; then
     fi
     # Windows'un GRUB menüsünde görünmesi için (os-prober artık açık) menü bir kez yeniden üretilir
     if [ -f /boot/grub/grub.cfg ] && [ -d /run/systemd/system ] && ! systemd-detect-virt --chroot --quiet && [ ! -e /run/live/medium ] \
-       && [ ! -e /var/lib/mindos/osprober-grub-updated ]; then
+       && [ ! -e /var/lib/mindos/osprober-grub-updated-2 ]; then
+        # -2: Türkçe dil ayarında os-prober Windows'u bulamıyordu (i/İ); düzeltmeyle menü bir kez daha üretilir
         mkdir -p /var/lib/mindos
         timeout 180 update-grub >/dev/null 2>&1 || true
-        : > /var/lib/mindos/osprober-grub-updated
+        : > /var/lib/mindos/osprober-grub-updated-2
     fi
 fi
 exit 0
