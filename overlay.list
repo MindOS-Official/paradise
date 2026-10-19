@@ -37,6 +37,7 @@ etc/xdg/fastfetch/config.jsonc
 etc/xdg/fastfetch/logo.txt
 etc/xdg/fastfetch/logo-paradise.txt
 etc/xdg/gnome-mimeapps.list
+usr/share/mime/packages/mindos-mind.xml
 etc/profile.d/fastfetch.sh
 etc/bash.bashrc
 usr/local/bin/fastfetch

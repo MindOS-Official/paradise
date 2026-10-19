@@ -25,3 +25,6 @@ application/x-xz=org.gnome.FileRoller.desktop
 application/x-zstd-compressed-tar=org.gnome.FileRoller.desktop
 application/zip=org.gnome.FileRoller.desktop
 application/zstd=org.gnome.FileRoller.desktop
+# .deb ve .mind dosyaları Mind Arc ile kurulur (.deb, .mind paketine dönüştürülür)
+application/vnd.debian.binary-package=org.mindos.mind_arc.desktop
+application/x-mindos-package=org.mindos.mind_arc.desktop

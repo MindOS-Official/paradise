@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.9.0"
+VERSION = "1.10.0"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -368,6 +368,79 @@ def resolve_dependencies(meta):
             continue
         _resolving.add(name)
         install_mind_file(fetch_verified(name, find_in_index(name)))
+
+
+# ------------------------------------------------------------------------------
+# Yerel .deb dosyası: .mind paketine dönüştürülüp kurulur (MindOS paket fabrikasıyla aynı yöntem).
+# Debian bağımlılıkları olduğu gibi saklanır, eksikleri resolve_dependencies kurar; Debian kurulum
+# betikleri .mind kancalarına sarılır, hata verirlerse kurulum durmaz.
+# ------------------------------------------------------------------------------
+DEB_MAINTSCRIPTS = {"preinst": ("pre_install.sh", "install"), "postinst": ("post_install.sh", "configure"),
+                    "prerm": ("pre_remove.sh", "remove"), "postrm": ("post_remove.sh", "remove")}
+
+
+def deb_hook_wrapper(pkg_name, script_name, arg, script_bytes):
+    import base64
+    b64 = base64.b64encode(script_bytes).decode()
+    return f"""#!/bin/sh
+# {pkg_name}: Debian {script_name} betiği (mindpkg .deb dönüştürmesi)
+mkdir -p /var/lib/mindpkg/tmp; t=$(mktemp -p /var/lib/mindpkg/tmp) || exit 0
+echo '{b64}' | base64 -d > "$t" && chmod 700 "$t"
+DPKG_MAINTSCRIPT_PACKAGE={pkg_name} DPKG_MAINTSCRIPT_NAME={script_name} DPKG_ROOT= \\
+DEBIAN_FRONTEND=noninteractive "$t" {arg} || echo "  ⚠ {pkg_name}: {script_name} betiği tamamlanamadı" >&2
+rm -f "$t"
+exit 0
+"""
+
+
+def convert_deb_to_mind(deb, outdir):
+    """Bir .deb dosyasını .mind paketine dönüştürür, oluşan dosyanın yolunu döndürür"""
+    if not shutil.which("dpkg-deb"):
+        raise SystemExit(f"{COLOR_RED}Hata:{COLOR_RESET} .deb dönüştürmek için dpkg-deb gerekli.")
+    field = lambda k: subprocess.run(["dpkg-deb", "-f", str(deb), k], capture_output=True, text=True).stdout.strip()
+    name, version, arch = field("Package"), field("Version"), field("Architecture")
+    if not name or not valid_pkg_name(name):
+        raise SystemExit(f"{COLOR_RED}Hata:{COLOR_RESET} {deb} geçerli bir .deb paketi değil.")
+    if arch not in ("amd64", "all"):
+        raise SystemExit(f"{COLOR_RED}Hata:{COLOR_RESET} {name} bu bilgisayar için değil (mimari: {arch}, gereken: amd64).")
+    desc = (field("Description").splitlines() or [name])[0]
+    deps = [d.strip() for k in ("Pre-Depends", "Depends") for d in field(k).split(",") if d.strip()]
+    meta = {"name": name, "version": version, "release": "1", "architecture": "x86_64", "description": desc,
+            "maintainer": field("Maintainer") or "?", "dependencies": deps, "origin": "local-deb", "format": 2}
+    out = Path(outdir) / f"{name}-{version.replace(':', '_')}-1-x86_64.mind"
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root, pkg, ctrl = td / "root", td / "pkg", td / "control"
+        root.mkdir(); pkg.mkdir()
+        subprocess.run(["dpkg-deb", "-x", str(deb), str(root)], check=True)
+        subprocess.run(["dpkg-deb", "-e", str(deb), str(ctrl)], check=True)
+        hooks = []
+        for script, (hook, arg) in DEB_MAINTSCRIPTS.items():
+            if (ctrl / script).exists():
+                (pkg / hook).write_text(deb_hook_wrapper(name, script, arg, (ctrl / script).read_bytes()), encoding="utf-8")
+                (pkg / hook).chmod(0o755)
+                hooks.append(script)
+        meta["maintscripts"] = hooks
+        (pkg / "metadata.json").write_text(json.dumps(meta, indent=4, ensure_ascii=False), encoding="utf-8")
+        subprocess.run(["tar", "--zstd", "-cf", str(pkg / "files.tar.zst"), "--owner=0", "--group=0",
+                        "--numeric-owner", "-C", str(root), "."], check=True)
+        subprocess.run(["tar", "--zstd", "-cf", str(out), "--owner=0", "--group=0", "--numeric-owner",
+                        "-C", str(pkg), "."], check=True)
+    return out
+
+
+def install_deb_file(file_path):
+    """Yerel .deb dosyasını .mind'a dönüştürüp kurar; .mind kopyası önbellekte kalır"""
+    check_root()
+    deb = Path(file_path).resolve()
+    if not deb.is_file():
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} Dosya bulunamadı: {deb}")
+        sys.exit(1)
+    print(f"{COLOR_GREEN}==>{COLOR_RESET} .deb paketi .mind biçimine dönüştürülüyor: {COLOR_BOLD}{deb.name}{COLOR_RESET}")
+    Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
+    mind = convert_deb_to_mind(deb, CACHE_DIR)
+    print(f"  {COLOR_GREEN}✓{COLOR_RESET} {mind.name}")
+    install_mind_file(mind)
 
 
 def install_mind_file(file_path):
@@ -2289,6 +2362,8 @@ def main():
         for target in args:
             if target.endswith(".mind"):  # yerel paket dosyası
                 install_mind_file(target)
+            elif target.endswith(".deb"):  # yerel .deb: .mind'a dönüştürülüp kurulur
+                install_deb_file(target)
             else:
                 install_from_repo_or_name(target)
 

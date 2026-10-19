@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MindOS paket dosyası (.mind): zstd ile sıkıştırılmış tar; Mind Arc ile kurulur -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-mindos-package">
+    <comment>MindOS package</comment>
+    <comment xml:lang="tr">MindOS paketi</comment>
+    <generic-icon name="package-x-generic"/>
+    <glob pattern="*.mind" weight="80"/>
+  </mime-type>
+</mime-info>

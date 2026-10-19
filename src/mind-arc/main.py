@@ -2682,7 +2682,8 @@ class MindArcApplication(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(
             application_id="org.mindos.mind_arc",
-            flags=Gio.ApplicationFlags.FLAGS_NONE,
+            # HANDLES_OPEN: .deb / .mind dosyasına çift tıklanınca (Mind Arc açıksa da) aynı pencereye gelir
+            flags=Gio.ApplicationFlags.HANDLES_OPEN,
             **kwargs
         )
         
@@ -2699,6 +2700,15 @@ class MindArcApplication(Adw.Application):
             win.extra_packages.entry.set_text(self.search_query)
             win.extra_packages.entry.grab_focus()
         win.present()
+
+    def do_open(self, files, n_files, hint):
+        """Dosya yöneticisinde .deb / .mind dosyasına çift tıklandı"""
+        self.start_page = "packages"
+        self.do_activate()
+        win = self.get_active_window()
+        paths = [f.get_path() for f in files if f.get_path()]
+        if paths and hasattr(win, "extra_packages"):
+            win.extra_packages.install_local(paths[0])
 
 
 def main():

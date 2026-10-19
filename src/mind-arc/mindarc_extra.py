@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import threading
 
-from gi.repository import Gtk, GLib, Adw, Pango
+from gi.repository import Gtk, GLib, Gio, Adw, Pango
 
 try:
     import mindos_prefs  # ortak MindOS tercihleri (mindos-apps: /usr/lib/python3/dist-packages)
@@ -70,6 +70,19 @@ TEXTS = {
                           "Looks in vendor → Debian → MindOS repositories"),
     "search_none": ("MindOS deposunda eşleşme yok", "No match in the MindOS repository"),
     "mind_installed": ("Kurulu .mind Paketleri", "Installed .mind Packages"),
+    "local_title": ("Yerel Paket Kur", "Install a Local Package"),
+    "local_desc": ("İndirdiğiniz .deb veya .mind dosyasını kurar. .deb dosyaları .mind paketine dönüştürülür, "
+                   "eksik bağımlılıklar Debian'dan kurulur.",
+                   "Installs a .deb or .mind file you downloaded. .deb files are converted to .mind packages; "
+                   "missing dependencies come from Debian."),
+    "local_choose": ("Dosya Seç…", "Choose File…"),
+    "local_row": (".deb veya .mind dosyası", ".deb or .mind file"),
+    "local_confirm": ("Paket kurulsun mu?", "Install this package?"),
+    "local_body": ("{name} {version}\n{desc}\n\nDosya: {file}\n\nYalnızca güvendiğiniz kaynaklardan indirdiğiniz "
+                   "paketleri kurun; paketler sisteme yönetici yetkisiyle kurulur.",
+                   "{name} {version}\n{desc}\n\nFile: {file}\n\nOnly install packages from sources you trust; "
+                   "they are installed with administrator rights."),
+    "local_bad": ("Bu dosya geçerli bir .deb veya .mind paketi değil.", "This file is not a valid .deb or .mind package."),
     "mind_installed_none": ("mindpkg ile kurulmuş .mind paketi yok", "No .mind packages installed with mindpkg"),
     "output": ("İşlem Çıktısı", "Operation Output"),
     "idle": ("Hazır", "Ready"),
@@ -381,6 +394,20 @@ class PackageCenter:
         self.search_group = g
         self.page.add(g)
 
+        # yerel paket (.deb / .mind)
+        g = Adw.PreferencesGroup()
+        texts.bind(g.set_title, "local_title")
+        texts.bind(g.set_description, "local_desc")
+        row = Adw.ActionRow()
+        texts.bind(row.set_title, "local_row")
+        row.add_prefix(Gtk.Label(label="📁"))
+        b = Gtk.Button(valign=Gtk.Align.CENTER)
+        texts.bind(b.set_label, "local_choose")
+        b.connect("clicked", lambda btn: self.choose_local())
+        row.add_suffix(b)
+        g.add(row)
+        self.page.add(g)
+
         self.page.add(self.output.group)
 
         # popüler uygulamalar
@@ -457,6 +484,74 @@ class PackageCenter:
             r.add_suffix(b)
             self.mind_group.add(r)
             self.mind_rows.append(r)
+
+    def choose_local(self):
+        dialog = Gtk.FileDialog(title=self.texts.t("local_title"))
+        flt = Gtk.FileFilter()
+        flt.set_name(".deb / .mind")
+        for pat in ("*.deb", "*.mind"):
+            flt.add_pattern(pat)
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(flt)
+        dialog.set_filters(filters)
+        dialog.set_default_filter(flt)
+
+        def done(dlg, res):
+            try:
+                f = dlg.open_finish(res)
+            except GLib.Error:
+                return  # vazgeçildi
+            if f and f.get_path():
+                self.install_local(f.get_path())
+
+        dialog.open(self.win, None, done)
+
+    @staticmethod
+    def local_info(path):
+        """(ad, sürüm, açıklama) ya da None"""
+        try:
+            if path.endswith(".deb"):
+                f = lambda k: subprocess.run(["dpkg-deb", "-f", path, k], capture_output=True, text=True,
+                                             timeout=20).stdout.strip()
+                name = f("Package")
+                return (name, f("Version"), (f("Description").splitlines() or [""])[0]) if name else None
+            if path.endswith(".mind"):
+                out = subprocess.run(["tar", "--zstd", "-xOf", path, "./metadata.json"], capture_output=True,
+                                     timeout=60).stdout or subprocess.run(
+                    ["tar", "--zstd", "-xOf", path, "metadata.json"], capture_output=True, timeout=60).stdout
+                meta = json.loads(out)
+                return (meta.get("name", "?"), str(meta.get("version", "")), meta.get("description", ""))
+        except Exception:
+            return None
+        return None
+
+    def install_local(self, path):
+        """Yerel .deb / .mind dosyasını onay alıp kurar (çift tıklama da buraya gelir)"""
+        t = self.texts.t
+        self.win.view_stack.set_visible_child_name("packages")
+        info = self.local_info(path)
+        if not info:
+            d = Adw.MessageDialog(transient_for=self.win, heading=t("local_title"), body=t("local_bad"))
+            d.add_response("ok", "OK")
+            d.present()
+            return
+        name, version, desc = info
+        dialog = Adw.MessageDialog(transient_for=self.win, heading=t("local_confirm"),
+                                   body=t("local_body", name=name, version=version, desc=desc,
+                                          file=os.path.basename(path)))
+        dialog.add_response("cancel", t("u_cancel"))
+        dialog.add_response("go", t("install"))
+        dialog.set_response_appearance("go", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("go")
+
+        def go(_d, r):
+            if r != "go":
+                return
+            self.output.run(["pkexec", MINDPKG, "install", path], self.after_change, f"mindpkg install {name}")
+            GLib.timeout_add(300, lambda: self.output.view.grab_focus() and False)
+
+        dialog.connect("response", go)
+        dialog.present()
 
     def after_change(self, rc):
         self.refresh()

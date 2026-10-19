@@ -40,6 +40,7 @@ FILES=(
   usr/lib/systemd/system/apt-daily.service.d/mindos-live.conf
   usr/lib/systemd/system/apt-daily-upgrade.service.d/mindos-live.conf
   etc/xdg/gnome-mimeapps.list
+  usr/share/mime/packages/mindos-mind.xml
   etc/xdg/fastfetch/config.jsonc
   etc/xdg/fastfetch/logo-paradise.txt
 )
