@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.8.4"
+VERSION = "1.9.0"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -463,6 +463,8 @@ def install_mind_file(file_path):
 
 
 # Üçüncü taraf uygulamalar: üreticinin resmi, imzalı apt deposundan kurulur
+# Üretici (kapalı kaynak) uygulamaları: kendi resmi depolarından kurulur, depo anahtarının parmak izi
+# sabittir; anahtar değişmişse depo eklenmez. Paket dosyaları MindOS deposunda dağıtılmaz (lisansları izin vermez).
 VENDOR_APPS = {
     "google-chrome-stable": {
         "aliases": ["chrome", "google-chrome"],
@@ -470,6 +472,8 @@ VENDOR_APPS = {
         "list": "/etc/apt/sources.list.d/google-chrome.list",
         "key_url": "https://dl.google.com/linux/linux_signing_key.pub",
         "keyring": "/usr/share/keyrings/google-chrome.asc",
+        "fingerprint": "EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796",
+        "match": "dl.google.com/linux/chrome",   # chrome/deb ve chrome-stable/deb aynı depo
     },
     "code": {
         "aliases": ["vscode", "visual-studio-code"],
@@ -477,15 +481,88 @@ VENDOR_APPS = {
         "list": "/etc/apt/sources.list.d/vscode.list",
         "key_url": "https://packages.microsoft.com/keys/microsoft.asc",
         "keyring": "/usr/share/keyrings/microsoft.asc",
+        "fingerprint": "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
     },
-    # Steam 32 bit kütüphanelere ihtiyaç duyar: i386 mimarisi eklenir, Valve'ın paketleri kurulur.
-    # Depo dosyası, steam-launcher paketinin kendi kurduğu dosyayla birebir aynıdır (çakışma olmaz).
+    "microsoft-edge-stable": {
+        "aliases": ["edge", "microsoft-edge"],
+        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.asc] https://packages.microsoft.com/repos/edge stable main",
+        "list": "/etc/apt/sources.list.d/microsoft-edge.list",
+        "key_url": "https://packages.microsoft.com/keys/microsoft.asc",
+        "keyring": "/usr/share/keyrings/microsoft.asc",
+        "fingerprint": "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
+    },
+    "brave-browser": {
+        "aliases": ["brave"],
+        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main",
+        "list": "/etc/apt/sources.list.d/brave-browser-release.list",
+        "key_url": "https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg",
+        "keyring": "/usr/share/keyrings/brave-browser-archive-keyring.gpg",
+        "fingerprint": "DBF1A116C220B8C7164F98230686B78420038257",
+    },
+    "vivaldi-stable": {
+        "aliases": ["vivaldi"],
+        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/vivaldi.gpg] https://repo.vivaldi.com/archive/deb/ stable main",
+        "list": "/etc/apt/sources.list.d/vivaldi.list",
+        "key_url": "https://repo.vivaldi.com/archive/linux_signing_key.pub",
+        "keyring": "/usr/share/keyrings/vivaldi.gpg",
+        "fingerprint": "8D1FA52AEF58A09D889DD4221256C34716BD9233",
+    },
+    "opera-stable": {
+        "aliases": ["opera"],
+        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/opera.gpg] https://deb.opera.com/opera-stable/ stable non-free",
+        "list": "/etc/apt/sources.list.d/opera-stable.list",
+        "key_url": "https://deb.opera.com/archive.key",
+        "keyring": "/usr/share/keyrings/opera.gpg",
+        "fingerprint": "6C86BE214648376680CA957B11EE8C00B693A745",
+    },
+    "anydesk": {
+        "aliases": ["any-desk"],
+        "source": "deb [signed-by=/usr/share/keyrings/anydesk.gpg] https://deb.anydesk.com all main",
+        "list": "/etc/apt/sources.list.d/anydesk-stable.list",
+        "key_url": "https://keys.anydesk.com/repos/DEB-GPG-KEY",
+        "keyring": "/usr/share/keyrings/anydesk.gpg",
+        "fingerprint": "06B5EA2FAE208E7CDA9761DCA2FB21D5A8772835",
+    },
+    "signal-desktop": {
+        "aliases": ["signal"],
+        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/signal-desktop-keyring.gpg] https://updates.signal.org/desktop/apt xenial main",
+        "list": "/etc/apt/sources.list.d/signal-xenial.list",
+        "key_url": "https://updates.signal.org/desktop/apt/keys.asc",
+        "keyring": "/usr/share/keyrings/signal-desktop-keyring.gpg",
+        "fingerprint": "DBA36B5181D0C816F630E889D980A17457F6FB06",
+    },
+    "sublime-text": {
+        "aliases": ["sublime", "subl"],
+        "source": "deb [signed-by=/usr/share/keyrings/sublimehq.gpg] https://download.sublimetext.com/ apt/stable/",
+        "list": "/etc/apt/sources.list.d/sublime-text.list",
+        "key_url": "https://download.sublimetext.com/sublimehq-pub.gpg",
+        "keyring": "/usr/share/keyrings/sublimehq.gpg",
+        "fingerprint": "1EDDE2CDFC025D17F6DA9EC0ADAE6AD28A8F901A",
+    },
+    "1password": {
+        "aliases": ["onepassword", "1-password"],
+        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main",
+        "list": "/etc/apt/sources.list.d/1password.list",
+        "key_url": "https://downloads.1password.com/linux/keys/1password.asc",
+        "keyring": "/usr/share/keyrings/1password-archive-keyring.gpg",
+        "fingerprint": "3FEF9748469ADBE15DA7CA80AC2D62742012EA22",
+    },
+    "docker-ce": {
+        "aliases": ["docker", "docker-engine"],
+        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable",
+        "list": "/etc/apt/sources.list.d/docker.list",
+        "key_url": "https://download.docker.com/linux/debian/gpg",
+        "keyring": "/usr/share/keyrings/docker.gpg",
+        "fingerprint": "9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
+        "packages": ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"],
+    },
     "steam-launcher": {
         "aliases": ["steam", "steam-installer", "valve-steam"],
         "source": "deb [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] https://repo.steampowered.com/steam/ stable steam\n"
                   "deb-src [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] https://repo.steampowered.com/steam/ stable steam",
         "list": "/etc/apt/sources.list.d/steam-stable.list",
         "key_url": "https://repo.steampowered.com/steam/archive/stable/steam.gpg",
+        "fingerprint": "BA1816EF8E75005FCF5E27A1F24AEA9FB05498B7",
         "keyring": "/usr/share/keyrings/steam.gpg",
         "foreign_arch": "i386",
         "packages": ["steam-launcher", "steam-libs-amd64", "steam-libs-i386:i386"],
@@ -507,6 +584,38 @@ def resolve_vendor_app(name):
     return None, None
 
 
+def apt_repo_configured(url):
+    """Bu adres zaten bir apt kaynağında tanımlı mı (aynı depo iki kez farklı anahtarla eklenirse apt hata verir)"""
+    url = url.split("://", 1)[-1].rstrip("/")
+    files = [Path("/etc/apt/sources.list"), *Path("/etc/apt/sources.list.d").glob("*")]
+    for f in files:
+        try:
+            if url in f.read_text(encoding="utf-8", errors="replace"):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def fetch_vendor_key(spec):
+    """Üretici anahtarını indirir; parmak izi tablodakiyle tutmazsa reddeder. .gpg yolları ikili biçimde saklanır."""
+    with tempfile.TemporaryDirectory() as td:
+        raw = Path(td) / "key"
+        download_with_progress(spec["key_url"], raw)
+        shown = subprocess.run(["gpg", "--batch", "--with-colons", "--show-keys", str(raw)],
+                               capture_output=True, text=True).stdout
+        fprs = [l.split(":")[9] for l in shown.splitlines() if l.startswith("fpr:")]
+        if spec.get("fingerprint") and spec["fingerprint"] not in fprs:
+            raise SystemExit(f"{COLOR_RED}Hata:{COLOR_RESET} {spec['key_url']} anahtarının parmak izi beklenenle uyuşmuyor; depo eklenmedi.")
+        data = raw.read_bytes()
+        Path(spec["keyring"]).parent.mkdir(parents=True, exist_ok=True)
+        if spec["keyring"].endswith(".gpg") and data.lstrip().startswith(b"-----BEGIN"):
+            subprocess.run(["gpg", "--batch", "--yes", "--dearmor", "-o", spec["keyring"], str(raw)], check=True)
+        else:
+            Path(spec["keyring"]).write_bytes(data)
+    os.chmod(spec["keyring"], 0o644)
+
+
 def apt_update_once():
     global _apt_updated
     if not _apt_updated:
@@ -524,6 +633,115 @@ def apt_has_candidate(pkg):
     return False
 
 
+# ------------------------------------------------------------------------------
+# Flathub: mindpkg deposunda ve Debian'da olmayan masaüstü uygulamaları (Discord, Spotify, Zoom ...).
+# Sık yazılan adlar Flathub kimliğine eşlenir; bazı adlar Debian'da bambaşka bir pakete denk geldiği
+# için (zoom: metin oyunu yorumlayıcısı, slack: yapılandırma aracı) bu eşleme Debian'dan önce bakılır.
+# ------------------------------------------------------------------------------
+FLATHUB_URL = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+FLATPAK_APPS = {
+    "com.discordapp.Discord": ["discord"],
+    "dev.vencord.Vesktop": ["vesktop"],
+    "io.github.spacingbat3.webcord": ["webcord"],
+    "com.spotify.Client": ["spotify", "spotify-client"],
+    "us.zoom.Zoom": ["zoom", "zoom-client"],
+    "com.slack.Slack": ["slack", "slack-desktop"],
+    "org.telegram.desktop": ["telegram"],
+    "com.rtosta.zapzap": ["whatsapp", "zapzap"],
+    "com.github.IsmaelMartinez.teams_for_linux": ["teams", "microsoft-teams"],
+    "md.obsidian.Obsidian": ["obsidian"],
+    "com.getpostman.Postman": ["postman"],
+    "com.mojang.Minecraft": ["minecraft", "minecraft-launcher"],
+    "org.prismlauncher.PrismLauncher": ["prismlauncher", "prism-launcher"],
+    "org.vinegarhq.Sober": ["sober", "roblox"],
+    "com.heroicgameslauncher.hgl": ["heroic", "heroic-games-launcher", "epic-games"],
+    "net.lutris.Lutris": ["lutris"],
+    "com.usebottles.bottles": ["bottles"],
+    "net.davidotek.pupgui2": ["protonup-qt", "protonup"],
+    "com.github.tchx84.Flatseal": ["flatseal"],
+    "app.zen_browser.zen": ["zen", "zen-browser"],
+    "org.onlyoffice.desktopeditors": ["onlyoffice"],
+    "com.jetbrains.IntelliJ-IDEA-Community": ["intellij", "intellij-idea"],
+    "com.jetbrains.PyCharm-Community": ["pycharm"],
+    "com.google.AndroidStudio": ["android-studio"],
+    "io.github.shiftey.Desktop": ["github-desktop"],
+    "com.protonvpn.www": ["protonvpn"],
+    "com.parsecgaming.parsec": ["parsec"],
+    "tv.plex.PlexDesktop": ["plex"],
+    "com.stremio.Stremio": ["stremio"],
+    "io.missioncenter.MissionCenter": ["mission-center", "missioncenter"],
+}
+
+
+def flatpak_alias(name):
+    n = name.lower()
+    for app_id, aliases in FLATPAK_APPS.items():
+        if n == app_id.lower() or n in aliases:
+            return app_id
+    return None
+
+
+def flatpak_ready(update_appstream=False):
+    """flatpak kurulu ve Flathub ekli olsun (sistem geneli)"""
+    if not shutil.which("flatpak"):
+        if not shutil.which("apt-get"):
+            return False
+        print(f"{COLOR_GREEN}==>{COLOR_RESET} Flatpak kuruluyor...")
+        apt_update_once()
+        if subprocess.run(["apt-get", "install", "-y", "-q", "flatpak"],
+                          env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"}).returncode != 0:
+            return False
+    subprocess.run(["flatpak", "remote-add", "--if-not-exists", "--system", "flathub", FLATHUB_URL],
+                   capture_output=True)
+    if update_appstream:
+        subprocess.run(["flatpak", "update", "--appstream", "--system", "-y", "flathub"], capture_output=True)
+    return True
+
+
+def flatpak_search(query, limit=10):
+    """Flathub'da arar: [(kimlik, ad, açıklama)]"""
+    if not shutil.which("flatpak"):
+        return []
+    out = subprocess.run(["flatpak", "search", "--columns=application,name,description", query],
+                         capture_output=True, text=True, env={**os.environ, "LC_ALL": "C.UTF-8"}).stdout
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and "." in parts[0]:
+            rows.append((parts[0].strip(), parts[1].strip(), parts[2].strip() if len(parts) > 2 else ""))
+    return rows[:limit]
+
+
+def flathub_exact(name):
+    """Adı tam eşleşen Flathub uygulaması (kimliğin son parçası ya da görünen ad)"""
+    n = name.lower().replace(" ", "-")
+    for app_id, title, _ in flatpak_search(name, limit=50):
+        if app_id.lower() == n or app_id.rsplit(".", 1)[-1].lower() == n or title.lower().replace(" ", "-") == n:
+            return app_id
+    return None
+
+
+def install_flatpak(app_id):
+    print(f"{COLOR_GREEN}==>{COLOR_RESET} Flathub'dan kuruluyor: {COLOR_BOLD}{app_id}{COLOR_RESET} ...")
+    res = subprocess.run(["flatpak", "install", "-y", "--noninteractive", "--system", "flathub", app_id])
+    if res.returncode != 0:
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} {app_id} Flathub'dan kurulamadı (flatpak çıkış kodu {res.returncode}).")
+        sys.exit(res.returncode)
+    print(f"{COLOR_GREEN}✓ Tamamlandı:{COLOR_RESET} {app_id} kuruldu (uygulama menüsünde).")
+
+
+def flatpak_installed_id(name):
+    """Kurulu Flatpak uygulamaları arasında adı/kimliği eşleşen"""
+    if not shutil.which("flatpak"):
+        return None
+    out = subprocess.run(["flatpak", "list", "--app", "--columns=application"], capture_output=True, text=True).stdout.split()
+    cand = flatpak_alias(name) or name
+    for app_id in out:
+        if app_id.lower() == cand.lower() or app_id.rsplit(".", 1)[-1].lower() == name.lower():
+            return app_id
+    return None
+
+
 def install_from_system(name):
     """mindpkg deposunda olmayan paketi üretici deposu veya Debian deposundan kurar"""
     if not shutil.which("apt-get"):
@@ -537,11 +755,11 @@ def install_from_system(name):
             print(f"{COLOR_GREEN}==>{COLOR_RESET} {arch} (32 bit) mimarisi etkinleştiriliyor...")
             subprocess.run(["dpkg", "--add-architecture", arch], check=True)
         packages = spec.get("packages", [pkg])
-        if not Path(spec["keyring"]).exists():
-            print(f"{COLOR_GREEN}==>{COLOR_RESET} Resmi üretici deposu ekleniyor: {COLOR_BOLD}{spec['source'].split(chr(10))[0].split()[-3]}{COLOR_RESET}")
-            download_with_progress(spec["key_url"], spec["keyring"])
-            os.chmod(spec["keyring"], 0o644)
-        if not Path(spec["list"]).exists():
+        url = spec["source"].split("\n")[0].split("]")[-1].split()[0]
+        if not apt_repo_configured(spec.get("match", url)):
+            print(f"{COLOR_GREEN}==>{COLOR_RESET} Resmi üretici deposu ekleniyor: {COLOR_BOLD}{url}{COLOR_RESET}")
+            if not Path(spec["keyring"]).exists():
+                fetch_vendor_key(spec)
             Path(spec["list"]).write_text(spec["source"] + "\n", encoding="utf-8")
         global _apt_updated
         _apt_updated = False
@@ -1018,6 +1236,12 @@ def install_from_repo_or_name(pkg_name):
         return
     if install_system_component(pkg_name):
         return
+    # Flathub'a eşlenmiş adlar (discord, spotify, zoom ...) Debian'dan önce: bazı adlar Debian'da başka paket
+    fp = flatpak_alias(pkg_name)
+    if fp and not resolve_vendor_app(pkg_name)[0]:
+        if flatpak_ready():
+            install_flatpak(fp)
+            return
     # Debian tabanlı sistemlerde (MindOS Paradise) önce üreticinin resmi deposu ve
     # sisteme özel derlenmiş Debian paketi denenir; yoksa MindOS .mind deposuna geçilir.
     if shutil.which("apt-get") and install_from_system(pkg_name):
@@ -1030,9 +1254,14 @@ def install_from_repo_or_name(pkg_name):
         target_meta = find_in_index(pkg_name)
 
     if not target_meta:
-        print(f"{COLOR_RED}Hata:{COLOR_RESET} '{pkg_name}' resmi MindOS depolarında bulunamadı.")
-        if shutil.which("flatpak"):
-            print(f"{COLOR_ACCENT}İpucu:{COLOR_RESET} Bu uygulama Flathub üzerinde olabilir: 'flatpak search {pkg_name}'")
+        # Son çare Flathub: adı tam eşleşen bir masaüstü uygulaması varsa onu kur
+        if flatpak_ready(update_appstream=True):
+            app_id = flathub_exact(pkg_name)
+            if app_id:
+                install_flatpak(app_id)
+                return
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} '{pkg_name}' MindOS deposunda, Debian'da ve Flathub'da bulunamadı.")
+        print(f"{COLOR_ACCENT}İpucu:{COLOR_RESET} Benzer adları görmek için: {COLOR_BOLD}mindpkg search {pkg_name}{COLOR_RESET}")
         sys.exit(1)
 
     install_mind_file(fetch_verified(pkg_name, target_meta))
@@ -1066,6 +1295,13 @@ def remove_package(pkg_name):
         sys_pkg = resolve_vendor_app(pkg_name)[0] or pkg_name
         st = subprocess.run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}", sys_pkg],
                             capture_output=True, text=True).stdout if shutil.which("dpkg-query") else ""
+        fp = flatpak_installed_id(pkg_name)
+        if fp and not st.startswith("ii"):
+            print(f"{COLOR_RED}==>{COLOR_RESET} Flatpak uygulaması kaldırılıyor: {COLOR_BOLD}{fp}{COLOR_RESET} ...")
+            res = subprocess.run(["flatpak", "uninstall", "-y", "--noninteractive", fp])
+            if res.returncode == 0:
+                print(f"{COLOR_GREEN}✓ Tamamlandı:{COLOR_RESET} {fp} kaldırıldı.")
+            sys.exit(res.returncode)
         if st.startswith("ii") and shutil.which("apt-get"):
             print(f"{COLOR_RED}==>{COLOR_RESET} Sistem paketi kaldırılıyor: {COLOR_BOLD}{sys_pkg}{COLOR_RESET} ...")
             res = subprocess.run(["apt-get", "remove", "-y", "--", sys_pkg],
@@ -1170,18 +1406,48 @@ def search_repos(query, limit=40):
         else:
             continue
         ranked.append((score, len(name), name, pkg))
-    if not ranked:
+    found = False
+    if ranked:
+        found = True
+        ranked.sort()
+        print(f"{COLOR_BOLD}MindOS deposu{COLOR_RESET}")
+        for _, _, name, pkg in ranked[:limit]:
+            mark = f" [{COLOR_ACCENT}kurulu{COLOR_RESET}]" if name in installed else ""
+            print(f"  {COLOR_GREEN}{name}{COLOR_RESET} {pkg.get('version')}{mark}")
+            print(f"    {pkg.get('description', '')}")
+        if len(ranked) > limit:
+            print(f"\n  ... ve {len(ranked) - limit} paket daha. Aramayı daraltın.")
+    vend = [(pkg, spec) for pkg, spec in VENDOR_APPS.items()
+            if query in pkg or any(query in a for a in spec["aliases"])]
+    if vend:
+        found = True
+        print(f"\n{COLOR_BOLD}Üreticinin resmi deposu{COLOR_RESET}")
+        for pkg, spec in vend:
+            print(f"  {COLOR_GREEN}{spec['aliases'][0]}{COLOR_RESET}  ({pkg})")
+    if shutil.which("apt-cache"):
+        out = subprocess.run(["apt-cache", "search", "--names-only", query], capture_output=True, text=True).stdout
+        deb = [l.split(" - ", 1) for l in out.splitlines() if " - " in l]
+        deb.sort(key=lambda x: (x[0] != query, not x[0].startswith(query), len(x[0])))
+        if deb:
+            found = True
+            print(f"\n{COLOR_BOLD}Debian{COLOR_RESET}")
+            for n, d in deb[:15]:
+                print(f"  {COLOR_GREEN}{n}{COLOR_RESET}  {d}")
+            if len(deb) > 15:
+                print(f"  ... ve {len(deb) - 15} paket daha.")
+    fps = flatpak_search(query)
+    alias = flatpak_alias(query)
+    if alias and alias not in [a for a, _, _ in fps]:
+        fps.insert(0, (alias, alias.rsplit(".", 1)[-1], ""))
+    if fps:
+        found = True
+        print(f"\n{COLOR_BOLD}Flathub{COLOR_RESET}")
+        for app_id, title, desc in fps:
+            print(f"  {COLOR_GREEN}{app_id}{COLOR_RESET}  {title}{(' - ' + desc) if desc else ''}")
+    if found:
+        print(f"\nKurmak için: {COLOR_BOLD}sudo mindpkg install <ad veya kimlik>{COLOR_RESET}")
+    else:
         print(f"'{query}' ile eşleşen bir paket bulunamadı.")
-        if shutil.which("apt-get"):
-            print(f"İpucu: Debian paketleri adıyla doğrudan kurulabilir: {COLOR_BOLD}sudo mindpkg install <ad>{COLOR_RESET}")
-        return
-    ranked.sort()
-    for _, _, name, pkg in ranked[:limit]:
-        mark = f" [{COLOR_ACCENT}kurulu{COLOR_RESET}]" if name in installed else ""
-        print(f"  {COLOR_GREEN}{name}{COLOR_RESET} {pkg.get('version')}{mark}")
-        print(f"    {pkg.get('description', '')}")
-    if len(ranked) > limit:
-        print(f"\n  ... ve {len(ranked) - limit} paket daha. Aramayı daraltın.")
 
 
 def build_package(source_dir, output_file=None):

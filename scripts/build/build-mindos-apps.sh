@@ -60,7 +60,7 @@ Version: $VER
 Architecture: all
 Maintainer: MindOS Team <https://github.com/MindOS-Official>
 Installed-Size: $SIZE
-Depends: rfkill, nftables, unattended-upgrades, python3, python3-gi, python3-cairo, python3-psutil, python3-requests, gir1.2-gtk-3.0, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-notify-0.7, pkexec
+Depends: rfkill, nftables, unattended-upgrades, systemd-timesyncd, python3, python3-gi, python3-cairo, python3-psutil, python3-requests, gir1.2-gtk-3.0, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-notify-0.7, pkexec
 Section: misc
 Priority: optional
 Homepage: https://mindos-official.github.io/mindos_/
