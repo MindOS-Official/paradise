@@ -11,6 +11,7 @@ amd64-microcode	3.20250311.1
 anacron	2.3-43
 apache2-bin	2.4.68-1~deb13u1
 apparmor	4.1.0-1
+apple-bcm-firmware	14.0-1+mindos1
 apt	3.0.3
 apt-utils	3.0.3
 aspell	0.60.8.1-4
