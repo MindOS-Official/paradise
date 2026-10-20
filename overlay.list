@@ -99,6 +99,7 @@ etc/apt/sources.list.d/mindos-backports.sources
 etc/apt/preferences.d/mindos-firmware
 
 # --- Güvenlik, bellek ve performans
+etc/modprobe.d/apple-wifi.conf
 etc/sysctl.d/80-mindos-hardening.conf
 etc/sysctl.d/90-mindos-memory.conf
 etc/nftables.conf
