@@ -9,16 +9,25 @@ SRC="${2:-/usr/local/bin/mindpkg}"
 # 1) Çekirdek binary
 install -Dm755 "$SRC" "$R/usr/local/bin/mindpkg"
 
-# 2) Yapılandırma: yalnızca resmi GitHub deposu (geliştirici makinesine özel yerel yollar ISO'ya girmez)
+# 2) Yapılandırma: resmi GitHub deposu (mimariye göre otomatik belirlenir)
 install -d "$R/etc/mindpkg/repos.d"
-cat > "$R/etc/mindpkg/mindpkg.conf" <<'C'
+ROOTFS_ARCH=${ARCH:-$(chroot "$R" dpkg --print-architecture 2>/dev/null || uname -m)}
+if [ "$ROOTFS_ARCH" = "arm64" ] || [ "$ROOTFS_ARCH" = "aarch64" ]; then
+    TARGET_ARCH="aarch64"
+    TARGET_REPO="https://raw.githubusercontent.com/MindOS-Official/packages-arm64/main"
+else
+    TARGET_ARCH="x86_64"
+    TARGET_REPO="https://raw.githubusercontent.com/MindOS-Official/packages/main"
+fi
+
+cat > "$R/etc/mindpkg/mindpkg.conf" <<C
 {
-    "architecture": "x86_64",
+    "architecture": "$TARGET_ARCH",
     "cache_dir": "/var/cache/mindpkg/pkg",
     "repositories": [
         {
             "name": "official",
-            "url": "https://raw.githubusercontent.com/MindOS-Official/packages/main",
+            "url": "$TARGET_REPO",
             "enabled": true
         }
     ]

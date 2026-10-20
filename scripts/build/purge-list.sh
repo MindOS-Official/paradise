@@ -25,5 +25,5 @@ inst() { dpkg-query -Wf '${db:Status-Abbrev} ${Package}\n' "$@" 2>/dev/null | aw
        gnome-mahjongg gnome-mines gnome-sudoku gnome-klotski gnome-nibbles gnome-robots gnome-taquin gnome-tetravex four-in-a-row \
        malcontent malcontent-gui geoclue-2-demo
   # Derleyici araç zinciri ve eski kernel
-  inst build-essential dkms 'gcc-14' 'g++-14' 'linux-headers-*' 'linux-kbuild-*' linux-image-amd64 'linux-image-6.12*'
+  inst build-essential dkms 'gcc-14' 'g++-14' 'linux-headers-*' 'linux-kbuild-*' linux-image-amd64 linux-image-arm64 'linux-image-6.12*'
 } | sort -u

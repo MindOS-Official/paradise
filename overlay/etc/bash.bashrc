@@ -59,20 +59,20 @@ fi
 
 # --- MindOS Paradise Özel Kurulum Kısayolları ---
 
-# Google Chrome Kurulumu (Önce indirir, sonra kurar ve kalıntıyı siler)
-alias kur-chrome='echo "Google Chrome indiriliyor..." && wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo dpkg -i /tmp/chrome.deb && sudo apt-get install -f -y && rm /tmp/chrome.deb && echo "Google Chrome başarıyla kuruldu!"'
+# Google Chrome Kurulumu (x86_64: resmi .deb, arm64: Chromium)
+alias kur-chrome='if [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then echo "Google Chrome yerine Chromium kuruluyor (ARM64)..." && sudo apt-get update && sudo apt-get install -y chromium && echo "Chromium başarıyla kuruldu!"; else echo "Google Chrome indiriliyor..." && wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo dpkg -i /tmp/chrome.deb && sudo apt-get install -f -y && rm /tmp/chrome.deb && echo "Google Chrome başarıyla kuruldu!"; fi'
 
-# Spotify Kurulumu (Curl ile anahtar çeker, repoyu ekler ve kurar)
-alias kur-spotify='echo "Spotify kuruluyor..." && curl -sS https://download.spotify.com/debian/pubkey_7A3A762FAFD4A51F.gpg | sudo gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/spotify.gpg && echo "deb http://repository.spotify.com stable non-free" | sudo tee /etc/apt/sources.list.d/spotify.list && sudo apt-get update && sudo apt-get install spotify-client -y && echo "Spotify başarıyla kuruldu!"'
+# Spotify Kurulumu (x86_64: resmi deb deposu, arm64: Flathub)
+alias kur-spotify='if [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then echo "Spotify kuruluyor (ARM64 Flathub)..." && flatpak install -y --noninteractive flathub com.spotify.Client && echo "Spotify başarıyla kuruldu!"; else echo "Spotify kuruluyor..." && curl -sS https://download.spotify.com/debian/pubkey_7A3A762FAFD4A51F.gpg | sudo gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/spotify.gpg && echo "deb http://repository.spotify.com stable non-free" | sudo tee /etc/apt/sources.list.d/spotify.list && sudo apt-get update && sudo apt-get install spotify-client -y && echo "Spotify başarıyla kuruldu!"; fi'
 
-# Steam Kurulumu (32-bit mimariyi açar ve kurar)
-alias kur-steam='echo "Steam kuruluyor..." && sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install steam -y && echo "Steam başarıyla kuruldu!"'
+# Steam Kurulumu (x86_64: i386 mimarisini açar ve kurar, arm64: bilgilendirir)
+alias kur-steam='if [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then echo "Bilgi: Steam istemcisi resmi olarak yalnızca x86_64 mimarisini destekler. ARM64 üzerinde çalıştırmak için Box64 veya FEX-Emu emülasyonu gereklidir." >&2; else echo "Steam kuruluyor..." && sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install steam -y && echo "Steam başarıyla kuruldu!"; fi'
 
 # VS Code Kurulumu
 alias kur-vscode='echo "Visual Studio Code kuruluyor..." && wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg && sudo install -D -o root -g root -m 644 packages.microsoft.gpg /etc/apt/keyrings/packages.microsoft.gpg && sudo sh -c "echo \"deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main\" > /etc/apt/sources.list.d/vscode.list" && rm -f packages.microsoft.gpg && sudo apt install apt-transport-https -y && sudo apt update && sudo apt install code -y && echo "VS Code başarıyla kuruldu!"'
 
-# Discord Kurulumu
-alias kur-discord='echo "Discord indiriliyor..." && wget -qO /tmp/discord.deb "https://discordapp.com/api/download?platform=linux&format=deb" && sudo dpkg -i /tmp/discord.deb && sudo apt-get install -f -y && rm /tmp/discord.deb && echo "Discord başarıyla kuruldu!"'
+# Discord Kurulumu (x86_64: resmi .deb, arm64: Flathub)
+alias kur-discord='if [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then echo "Discord kuruluyor (ARM64 Flathub)..." && flatpak install -y --noninteractive flathub com.discordapp.Discord && echo "Discord başarıyla kuruldu!"; else echo "Discord indiriliyor..." && wget -qO /tmp/discord.deb "https://discordapp.com/api/download?platform=linux&format=deb" && sudo dpkg -i /tmp/discord.deb && sudo apt-get install -f -y && rm /tmp/discord.deb && echo "Discord başarıyla kuruldu!"; fi'
 
 # Sistemi Tamamen Güncelleme ve Temizleme
 alias sistem-temizle='echo "Sistem temizleniyor..." && sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y --purge && sudo apt clean && echo "Sistem pırıl pırıl!"'

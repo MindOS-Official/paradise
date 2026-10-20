@@ -27,20 +27,30 @@ except ImportError:
 MINDPKG = "/usr/local/bin/mindpkg"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
-# (komut adı, sistem paket adı, görünen ad, açıklama anahtarı, simge)
-POPULAR_APPS = [
-    ("chrome", "google-chrome-stable", "Google Chrome", "app_chrome", "🌐"),
-    ("vscode", "code", "Visual Studio Code", "app_vscode", "🧑‍💻"),
-    ("steam", "steam-launcher", "Steam", "app_steam", "🎮"),
-    ("discord", "discord", "Discord", "app_discord", "💬"),
-    ("vlc", "vlc", "VLC", "app_vlc", "🎬"),
-    ("gimp", "gimp", "GIMP", "app_gimp", "🎨"),
-    ("obs-studio", "obs-studio", "OBS Studio", "app_obs", "🎥"),
-    ("inkscape", "inkscape", "Inkscape", "app_inkscape", "✒️"),
-    ("audacity", "audacity", "Audacity", "app_audacity", "🎙️"),
-    ("telegram-desktop", "telegram-desktop", "Telegram", "app_telegram", "✈️"),
-    ("htop", "htop", "htop", "app_htop", "📊"),
-]
+def get_popular_apps():
+    m = os.uname().machine.lower()
+    is_arm = m in ("aarch64", "arm64")
+    apps = [
+        ("chromium" if is_arm else "chrome", "chromium" if is_arm else "google-chrome-stable",
+         "Chromium Web Browser" if is_arm else "Google Chrome", "app_chrome", "🌐"),
+        ("vscode", "code", "Visual Studio Code", "app_vscode", "🧑‍💻"),
+    ]
+    if not is_arm:
+        apps.append(("steam", "steam-launcher", "Steam", "app_steam", "🎮"))
+    apps.extend([
+        ("discord", "discord", "Discord", "app_discord", "💬"),
+        ("vlc", "vlc", "VLC", "app_vlc", "🎬"),
+        ("gimp", "gimp", "GIMP", "app_gimp", "🎨"),
+        ("obs-studio", "obs-studio", "OBS Studio", "app_obs", "🎥"),
+        ("inkscape", "inkscape", "Inkscape", "app_inkscape", "✒️"),
+        ("audacity", "audacity", "Audacity", "app_audacity", "🎙️"),
+        ("telegram-desktop", "telegram-desktop", "Telegram", "app_telegram", "✈️"),
+        ("htop", "htop", "htop", "app_htop", "📊"),
+    ])
+    return apps
+
+
+POPULAR_APPS = get_popular_apps()
 
 TEXTS = {
     "packages": ("Paket Merkezi", "Package Center"),

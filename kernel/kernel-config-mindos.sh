@@ -31,10 +31,20 @@ $C -e KSM
 # Statik per-cpu bellek yükünü azalt (Debian: 8192)
 $C -d MAXSMP --set-val NR_CPUS 512
 
+TARGET_ARCH=${2:-${ARCH:-$(uname -m)}}
+
 # Masaüstünde gereksiz sunucu/egzotik donanım alt sistemleri (boyut)
 for o in STAGING INFINIBAND HAMRADIO ATM ISDN CAN ARCNET FDDI WAN IEEE802154 6LOWPAN \
          RAPIDIO GREYBUS MEDIA_DIGITAL_TV_SUPPORT MEDIA_ANALOG_TV_SUPPORT MEDIA_SDR_SUPPORT \
          MLX4_CORE MLX5_CORE NET_VENDOR_CHELSIO NET_VENDOR_HUAWEI NET_VENDOR_CAVIUM \
-         SCSI_DEBUG KUNIT RUNTIME_TESTING_MENU X86_NATIVE_CPU; do
+         SCSI_DEBUG KUNIT RUNTIME_TESTING_MENU; do
   $C -d $o
 done
+
+if [ "$TARGET_ARCH" = "aarch64" ] || [ "$TARGET_ARCH" = "arm64" ]; then
+  # ARM64'e özel masaüstü ayarları
+  $C -e ARM64 -e ARM64_4K_PAGES -d ARM64_64K_PAGES -e ARM64_VA_BITS_48 -e COMPAT
+  $C -e EFI_STUB -e EFI -d NUMA
+else
+  $C -d X86_NATIVE_CPU
+fi

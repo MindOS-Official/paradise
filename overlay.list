@@ -118,6 +118,7 @@ usr/share/firefox-esr/distribution/policies.json
 etc/live/config.conf.d/10-mindos.conf
 etc/locale.conf
 etc/calamares/branding/debian
+etc/calamares/modules/bootloader.conf
 etc/calamares/modules/locale.conf
 etc/calamares/modules/partition.conf
 etc/calamares/modules/packages.conf

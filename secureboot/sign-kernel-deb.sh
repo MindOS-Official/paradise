@@ -21,5 +21,7 @@ sed -i -E "s/^Version: .*/Version: $VER/" "$W/pkg/DEBIAN/control"
 # md5sums imzalı dosyalarla güncellenir (dpkg --verify temiz kalsın)
 ( cd "$W/pkg" && find . -path ./DEBIAN -prune -o -type f -print | sed 's|^\./||' | sort | xargs -d '\n' md5sum > DEBIAN/md5sums )
 NAME=$(sed -n 's/^Package: //p' "$W/pkg/DEBIAN/control")
-dpkg-deb --root-owner-group -Zzstd -b "$W/pkg" "$OUT/${NAME}_${VER}_amd64.deb" >/dev/null
-echo "$OUT/${NAME}_${VER}_amd64.deb"
+ARCH=$(sed -n 's/^Architecture: //p' "$W/pkg/DEBIAN/control")
+ARCH=${ARCH:-amd64}
+dpkg-deb --root-owner-group -Zzstd -b "$W/pkg" "$OUT/${NAME}_${VER}_${ARCH}.deb" >/dev/null
+echo "$OUT/${NAME}_${VER}_${ARCH}.deb"

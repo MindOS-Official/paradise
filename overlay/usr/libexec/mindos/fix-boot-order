@@ -113,7 +113,19 @@ def main():
     if not ours_dir:
         say("Bu kurulumun önyükleyici klasörü ESP'de bulunamadı; dokunulmadı.")
         return
-    loader = "shimx64.efi" if find_ci(esp_mount, f"EFI/{ours_dir}/shimx64.efi") else "grubx64.efi"
+    is_arm = os.uname().machine in ("aarch64", "arm64")
+    cands = (
+        ("shimaa64.efi", "grubaa64.efi", "bootaa64.efi", "shimx64.efi", "grubx64.efi", "bootx64.efi")
+        if is_arm else
+        ("shimx64.efi", "grubx64.efi", "bootx64.efi", "shimaa64.efi", "grubaa64.efi", "bootaa64.efi")
+    )
+    loader = None
+    for cand in cands:
+        if find_ci(esp_mount, f"EFI/{ours_dir}/{cand}"):
+            loader = cand
+            break
+    if not loader:
+        loader = "shimaa64.efi" if is_arm else "shimx64.efi"
     ours_path = f"\\EFI\\{ours_dir}\\{loader}"
 
     entries, order = entries_and_order()

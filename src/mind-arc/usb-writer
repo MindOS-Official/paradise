@@ -152,16 +152,30 @@ cat >> "$T/etc/default/grub" <<'EOF'
 GRUB_DISABLE_OS_PROBER=true
 EOF
 # Taşınabilir diskte GRUB güncellemeleri EFI kaydına (NVRAM) yazmaz, çıkarılabilir yolu günceller
-echo "grub-efi-amd64 grub2/force_efi_extra_removable boolean true" | IN debconf-set-selections
-echo "grub-efi-amd64 grub2/update_nvram boolean false" | IN debconf-set-selections
-# grub-efi-amd64 paketi çekirdek güncellemelerinde GRUB'u günceller; internetsiz de kurulsun diye ISO havuzundan
-cp "$ISO_MNT"/pool/main/g/grub2/grub-efi-amd64_*.deb "$ISO_MNT"/pool/main/g/grub2/grub-efi_*.deb "$T/tmp/" 2>/dev/null || true
-IN sh -c 'dpkg -i /tmp/grub-efi-amd64_*.deb /tmp/grub-efi_*.deb >/dev/null 2>&1; rm -f /tmp/grub-efi*.deb' || true
+SYS_ARCH=$(uname -m)
+if [ "$SYS_ARCH" = "aarch64" ] || [ "$SYS_ARCH" = "arm64" ]; then
+    echo "grub-efi-arm64 grub2/force_efi_extra_removable boolean true" | IN debconf-set-selections
+    echo "grub-efi-arm64 grub2/update_nvram boolean false" | IN debconf-set-selections
+    cp "$ISO_MNT"/pool/main/g/grub2/grub-efi-arm64_*.deb "$ISO_MNT"/pool/main/g/grub2/grub-efi_*.deb "$T/tmp/" 2>/dev/null || true
+    IN sh -c 'dpkg -i /tmp/grub-efi-arm64_*.deb /tmp/grub-efi_*.deb >/dev/null 2>&1; rm -f /tmp/grub-efi*.deb' || true
 
-IN grub-install --target=i386-pc "$DEV" >/dev/null 2>&1 || fail bootloader
-IN grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=MindOS \
-    --removable --no-nvram --uefi-secure-boot >/dev/null 2>&1 || fail bootloader
-[ -f "$T/boot/efi/EFI/BOOT/BOOTX64.EFI" ] || fail bootloader
+    IN grub-install --target=arm64-efi --efi-directory=/boot/efi --bootloader-id=MindOS \
+        --removable --no-nvram --uefi-secure-boot >/dev/null 2>&1 || \
+    IN grub-install --target=arm64-efi --efi-directory=/boot/efi --bootloader-id=MindOS \
+        --removable --no-nvram >/dev/null 2>&1 || fail bootloader
+    [ -f "$T/boot/efi/EFI/BOOT/BOOTAA64.EFI" ] || [ -f "$T/boot/efi/EFI/BOOT/bootaa64.efi" ] || fail bootloader
+else
+    echo "grub-efi-amd64 grub2/force_efi_extra_removable boolean true" | IN debconf-set-selections
+    echo "grub-efi-amd64 grub2/update_nvram boolean false" | IN debconf-set-selections
+    # grub-efi-amd64 paketi çekirdek güncellemelerinde GRUB'u günceller; internetsiz de kurulsun diye ISO havuzundan
+    cp "$ISO_MNT"/pool/main/g/grub2/grub-efi-amd64_*.deb "$ISO_MNT"/pool/main/g/grub2/grub-efi_*.deb "$T/tmp/" 2>/dev/null || true
+    IN sh -c 'dpkg -i /tmp/grub-efi-amd64_*.deb /tmp/grub-efi_*.deb >/dev/null 2>&1; rm -f /tmp/grub-efi*.deb' || true
+
+    IN grub-install --target=i386-pc "$DEV" >/dev/null 2>&1 || fail bootloader
+    IN grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=MindOS \
+        --removable --no-nvram --uefi-secure-boot >/dev/null 2>&1 || fail bootloader
+    [ -f "$T/boot/efi/EFI/BOOT/BOOTX64.EFI" ] || fail bootloader
+fi
 
 # Secure Boot: her bilgisayarda bir kez MindOS anahtarı kaydedilebilsin diye MokManager girdisi
 mkdir -p "$T/boot/efi/EFI/mindos"
@@ -172,7 +186,11 @@ cat <<'GRUB'
 if [ "${shim_lock}" = "y" ]; then
 	menuentry "Secure Boot: Enroll MindOS key" {
 		search --no-floppy --set=root --file /EFI/mindos/MindOS-SecureBoot.cer
-		chainloader /EFI/BOOT/mmx64.efi
+		if [ -f /EFI/BOOT/mmaa64.efi ]; then
+			chainloader /EFI/BOOT/mmaa64.efi
+		else
+			chainloader /EFI/BOOT/mmx64.efi
+		fi
 	}
 fi
 GRUB

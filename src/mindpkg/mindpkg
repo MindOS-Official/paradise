@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-VERSION = "1.10.0"
+VERSION = "1.11.0"
 CONFIG_FILE = "/etc/mindpkg/mindpkg.conf"
 REPOS_DIR = "/etc/mindpkg/repos.d"
 DB_DIR = "/var/lib/mindpkg"
@@ -43,17 +43,45 @@ COLOR_RED = "\033[1;31m"
 COLOR_BOLD = "\033[1m"
 COLOR_RESET = "\033[0m"
 
-DEFAULT_CONFIG = {
-    "architecture": "x86_64",
-    "cache_dir": CACHE_DIR,
-    "repositories": [
-        {
-            "name": "official",
-            "url": "https://raw.githubusercontent.com/MindOS-Official/packages/main",
-            "enabled": True
-        }
-    ]
-}
+
+def get_system_arch():
+    """Sistem mimarisini döner: 'x86_64' veya 'aarch64'"""
+    m = os.uname().machine.lower()
+    if m in ("aarch64", "arm64", "armv8l", "armv8b"):
+        return "aarch64"
+    return "x86_64"
+
+
+def get_debian_arch():
+    """Debian paket mimarisini döner: 'amd64' veya 'arm64'"""
+    return "arm64" if get_system_arch() == "aarch64" else "amd64"
+
+
+def get_default_repo_url(arch=None):
+    """Mimariye göre varsayılan resmi MindOS depo adresi"""
+    if arch is None:
+        arch = get_system_arch()
+    if arch in ("aarch64", "arm64"):
+        return "https://raw.githubusercontent.com/MindOS-Official/packages-arm64/main"
+    return "https://raw.githubusercontent.com/MindOS-Official/packages/main"
+
+
+def get_default_config():
+    arch = get_system_arch()
+    return {
+        "architecture": arch,
+        "cache_dir": CACHE_DIR,
+        "repositories": [
+            {
+                "name": "official",
+                "url": get_default_repo_url(arch),
+                "enabled": True
+            }
+        ]
+    }
+
+
+DEFAULT_CONFIG = get_default_config()
 
 
 def print_banner():
@@ -67,7 +95,7 @@ def ensure_directories():
             Path(d).mkdir(parents=True, exist_ok=True)
         if not os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_CONFIG, f, indent=4)
+                json.dump(get_default_config(), f, indent=4)
     except PermissionError:
         if os.geteuid() == 0:
             raise  # yetkisiz kullanıcı (ör. Mind Arc'ın 'mindpkg check' çağrısı) yalnızca okur
@@ -75,11 +103,25 @@ def ensure_directories():
 
 def load_config():
     ensure_directories()
+    sys_arch = get_system_arch()
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
     except Exception:
-        return DEFAULT_CONFIG
+        return get_default_config()
+
+    # Otomatik çoklu mimari yönlendirmesi: sistem aarch64 ise ve resmi depo x86 deposuna bakıyorsa arm64 reposuna yönlendir
+    cfg_arch = cfg.get("architecture")
+    if not cfg_arch:
+        cfg["architecture"] = sys_arch
+    for repo in cfg.get("repositories", []):
+        if repo.get("name") == "official":
+            url = repo.get("url", "")
+            if sys_arch == "aarch64" and "MindOS-Official/packages/main" in url:
+                repo["url"] = get_default_repo_url("aarch64")
+            elif sys_arch == "x86_64" and "MindOS-Official/packages-arm64/main" in url:
+                repo["url"] = get_default_repo_url("x86_64")
+    return cfg
 
 
 def check_root():
@@ -401,13 +443,15 @@ def convert_deb_to_mind(deb, outdir):
     name, version, arch = field("Package"), field("Version"), field("Architecture")
     if not name or not valid_pkg_name(name):
         raise SystemExit(f"{COLOR_RED}Hata:{COLOR_RESET} {deb} geçerli bir .deb paketi değil.")
-    if arch not in ("amd64", "all"):
-        raise SystemExit(f"{COLOR_RED}Hata:{COLOR_RESET} {name} bu bilgisayar için değil (mimari: {arch}, gereken: amd64).")
+    cur_deb_arch = get_debian_arch()
+    cur_sys_arch = get_system_arch()
+    if arch not in (cur_deb_arch, "all"):
+        raise SystemExit(f"{COLOR_RED}Hata:{COLOR_RESET} {name} bu bilgisayar için değil (mimari: {arch}, gereken: {cur_deb_arch}).")
     desc = (field("Description").splitlines() or [name])[0]
     deps = [d.strip() for k in ("Pre-Depends", "Depends") for d in field(k).split(",") if d.strip()]
-    meta = {"name": name, "version": version, "release": "1", "architecture": "x86_64", "description": desc,
+    meta = {"name": name, "version": version, "release": "1", "architecture": cur_sys_arch, "description": desc,
             "maintainer": field("Maintainer") or "?", "dependencies": deps, "origin": "local-deb", "format": 2}
-    out = Path(outdir) / f"{name}-{version.replace(':', '_')}-1-x86_64.mind"
+    out = Path(outdir) / f"{name}-{version.replace(':', '_')}-1-{cur_sys_arch}.mind"
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         root, pkg, ctrl = td / "root", td / "pkg", td / "control"
@@ -538,109 +582,117 @@ def install_mind_file(file_path):
 # Üçüncü taraf uygulamalar: üreticinin resmi, imzalı apt deposundan kurulur
 # Üretici (kapalı kaynak) uygulamaları: kendi resmi depolarından kurulur, depo anahtarının parmak izi
 # sabittir; anahtar değişmişse depo eklenmez. Paket dosyaları MindOS deposunda dağıtılmaz (lisansları izin vermez).
-VENDOR_APPS = {
-    "google-chrome-stable": {
-        "aliases": ["chrome", "google-chrome"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.asc] https://dl.google.com/linux/chrome/deb/ stable main",
-        "list": "/etc/apt/sources.list.d/google-chrome.list",
-        "key_url": "https://dl.google.com/linux/linux_signing_key.pub",
-        "keyring": "/usr/share/keyrings/google-chrome.asc",
-        "fingerprint": "EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796",
-        "match": "dl.google.com/linux/chrome",   # chrome/deb ve chrome-stable/deb aynı depo
-    },
-    "code": {
-        "aliases": ["vscode", "visual-studio-code"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.asc] https://packages.microsoft.com/repos/code stable main",
-        "list": "/etc/apt/sources.list.d/vscode.list",
-        "key_url": "https://packages.microsoft.com/keys/microsoft.asc",
-        "keyring": "/usr/share/keyrings/microsoft.asc",
-        "fingerprint": "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
-    },
-    "microsoft-edge-stable": {
-        "aliases": ["edge", "microsoft-edge"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.asc] https://packages.microsoft.com/repos/edge stable main",
-        "list": "/etc/apt/sources.list.d/microsoft-edge.list",
-        "key_url": "https://packages.microsoft.com/keys/microsoft.asc",
-        "keyring": "/usr/share/keyrings/microsoft.asc",
-        "fingerprint": "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
-    },
-    "brave-browser": {
-        "aliases": ["brave"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main",
-        "list": "/etc/apt/sources.list.d/brave-browser-release.list",
-        "key_url": "https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg",
-        "keyring": "/usr/share/keyrings/brave-browser-archive-keyring.gpg",
-        "fingerprint": "DBF1A116C220B8C7164F98230686B78420038257",
-    },
-    "vivaldi-stable": {
-        "aliases": ["vivaldi"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/vivaldi.gpg] https://repo.vivaldi.com/archive/deb/ stable main",
-        "list": "/etc/apt/sources.list.d/vivaldi.list",
-        "key_url": "https://repo.vivaldi.com/archive/linux_signing_key.pub",
-        "keyring": "/usr/share/keyrings/vivaldi.gpg",
-        "fingerprint": "8D1FA52AEF58A09D889DD4221256C34716BD9233",
-    },
-    "opera-stable": {
-        "aliases": ["opera"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/opera.gpg] https://deb.opera.com/opera-stable/ stable non-free",
-        "list": "/etc/apt/sources.list.d/opera-stable.list",
-        "key_url": "https://deb.opera.com/archive.key",
-        "keyring": "/usr/share/keyrings/opera.gpg",
-        "fingerprint": "6C86BE214648376680CA957B11EE8C00B693A745",
-    },
-    "anydesk": {
-        "aliases": ["any-desk"],
-        "source": "deb [signed-by=/usr/share/keyrings/anydesk.gpg] https://deb.anydesk.com all main",
-        "list": "/etc/apt/sources.list.d/anydesk-stable.list",
-        "key_url": "https://keys.anydesk.com/repos/DEB-GPG-KEY",
-        "keyring": "/usr/share/keyrings/anydesk.gpg",
-        "fingerprint": "06B5EA2FAE208E7CDA9761DCA2FB21D5A8772835",
-    },
-    "signal-desktop": {
-        "aliases": ["signal"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/signal-desktop-keyring.gpg] https://updates.signal.org/desktop/apt xenial main",
-        "list": "/etc/apt/sources.list.d/signal-xenial.list",
-        "key_url": "https://updates.signal.org/desktop/apt/keys.asc",
-        "keyring": "/usr/share/keyrings/signal-desktop-keyring.gpg",
-        "fingerprint": "DBA36B5181D0C816F630E889D980A17457F6FB06",
-    },
-    "sublime-text": {
-        "aliases": ["sublime", "subl"],
-        "source": "deb [signed-by=/usr/share/keyrings/sublimehq.gpg] https://download.sublimetext.com/ apt/stable/",
-        "list": "/etc/apt/sources.list.d/sublime-text.list",
-        "key_url": "https://download.sublimetext.com/sublimehq-pub.gpg",
-        "keyring": "/usr/share/keyrings/sublimehq.gpg",
-        "fingerprint": "1EDDE2CDFC025D17F6DA9EC0ADAE6AD28A8F901A",
-    },
-    "1password": {
-        "aliases": ["onepassword", "1-password"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main",
-        "list": "/etc/apt/sources.list.d/1password.list",
-        "key_url": "https://downloads.1password.com/linux/keys/1password.asc",
-        "keyring": "/usr/share/keyrings/1password-archive-keyring.gpg",
-        "fingerprint": "3FEF9748469ADBE15DA7CA80AC2D62742012EA22",
-    },
-    "docker-ce": {
-        "aliases": ["docker", "docker-engine"],
-        "source": "deb [arch=amd64 signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable",
-        "list": "/etc/apt/sources.list.d/docker.list",
-        "key_url": "https://download.docker.com/linux/debian/gpg",
-        "keyring": "/usr/share/keyrings/docker.gpg",
-        "fingerprint": "9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
-        "packages": ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"],
-    },
-    "steam-launcher": {
-        "aliases": ["steam", "steam-installer", "valve-steam"],
-        "source": "deb [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] https://repo.steampowered.com/steam/ stable steam\n"
-                  "deb-src [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] https://repo.steampowered.com/steam/ stable steam",
-        "list": "/etc/apt/sources.list.d/steam-stable.list",
-        "key_url": "https://repo.steampowered.com/steam/archive/stable/steam.gpg",
-        "fingerprint": "BA1816EF8E75005FCF5E27A1F24AEA9FB05498B7",
-        "keyring": "/usr/share/keyrings/steam.gpg",
-        "foreign_arch": "i386",
-        "packages": ["steam-launcher", "steam-libs-amd64", "steam-libs-i386:i386"],
-    },
-}
+def get_vendor_apps():
+    deb_arch = get_debian_arch()
+    apps = {
+        "google-chrome-stable": {
+            "aliases": ["chrome", "google-chrome"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/google-chrome.asc] https://dl.google.com/linux/chrome/deb/ stable main",
+            "list": "/etc/apt/sources.list.d/google-chrome.list",
+            "key_url": "https://dl.google.com/linux/linux_signing_key.pub",
+            "keyring": "/usr/share/keyrings/google-chrome.asc",
+            "fingerprint": "EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796",
+            "match": "dl.google.com/linux/chrome",   # chrome/deb ve chrome-stable/deb aynı depo
+            "arm64_fallback": "chromium",
+        },
+        "code": {
+            "aliases": ["vscode", "visual-studio-code"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/microsoft.asc] https://packages.microsoft.com/repos/code stable main",
+            "list": "/etc/apt/sources.list.d/vscode.list",
+            "key_url": "https://packages.microsoft.com/keys/microsoft.asc",
+            "keyring": "/usr/share/keyrings/microsoft.asc",
+            "fingerprint": "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
+        },
+        "microsoft-edge-stable": {
+            "aliases": ["edge", "microsoft-edge"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/microsoft.asc] https://packages.microsoft.com/repos/edge stable main",
+            "list": "/etc/apt/sources.list.d/microsoft-edge.list",
+            "key_url": "https://packages.microsoft.com/keys/microsoft.asc",
+            "keyring": "/usr/share/keyrings/microsoft.asc",
+            "fingerprint": "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
+        },
+        "brave-browser": {
+            "aliases": ["brave"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main",
+            "list": "/etc/apt/sources.list.d/brave-browser-release.list",
+            "key_url": "https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg",
+            "keyring": "/usr/share/keyrings/brave-browser-archive-keyring.gpg",
+            "fingerprint": "DBF1A116C220B8C7164F98230686B78420038257",
+        },
+        "vivaldi-stable": {
+            "aliases": ["vivaldi"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/vivaldi.gpg] https://repo.vivaldi.com/archive/deb/ stable main",
+            "list": "/etc/apt/sources.list.d/vivaldi.list",
+            "key_url": "https://repo.vivaldi.com/archive/linux_signing_key.pub",
+            "keyring": "/usr/share/keyrings/vivaldi.gpg",
+            "fingerprint": "8D1FA52AEF58A09D889DD4221256C34716BD9233",
+        },
+        "opera-stable": {
+            "aliases": ["opera"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/opera.gpg] https://deb.opera.com/opera-stable/ stable non-free",
+            "list": "/etc/apt/sources.list.d/opera-stable.list",
+            "key_url": "https://deb.opera.com/archive.key",
+            "keyring": "/usr/share/keyrings/opera.gpg",
+            "fingerprint": "6C86BE214648376680CA957B11EE8C00B693A745",
+        },
+        "anydesk": {
+            "aliases": ["any-desk"],
+            "source": "deb [signed-by=/usr/share/keyrings/anydesk.gpg] https://deb.anydesk.com all main",
+            "list": "/etc/apt/sources.list.d/anydesk-stable.list",
+            "key_url": "https://keys.anydesk.com/repos/DEB-GPG-KEY",
+            "keyring": "/usr/share/keyrings/anydesk.gpg",
+            "fingerprint": "06B5EA2FAE208E7CDA9761DCA2FB21D5A8772835",
+        },
+        "signal-desktop": {
+            "aliases": ["signal"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/signal-desktop-keyring.gpg] https://updates.signal.org/desktop/apt xenial main",
+            "list": "/etc/apt/sources.list.d/signal-xenial.list",
+            "key_url": "https://updates.signal.org/desktop/apt/keys.asc",
+            "keyring": "/usr/share/keyrings/signal-desktop-keyring.gpg",
+            "fingerprint": "DBA36B5181D0C816F630E889D980A17457F6FB06",
+        },
+        "sublime-text": {
+            "aliases": ["sublime", "subl"],
+            "source": "deb [signed-by=/usr/share/keyrings/sublimehq.gpg] https://download.sublimetext.com/ apt/stable/",
+            "list": "/etc/apt/sources.list.d/sublime-text.list",
+            "key_url": "https://download.sublimetext.com/sublimehq-pub.gpg",
+            "keyring": "/usr/share/keyrings/sublimehq.gpg",
+            "fingerprint": "1EDDE2CDFC025D17F6DA9EC0ADAE6AD28A8F901A",
+        },
+        "1password": {
+            "aliases": ["onepassword", "1-password"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/{deb_arch} stable main",
+            "list": "/etc/apt/sources.list.d/1password.list",
+            "key_url": "https://downloads.1password.com/linux/keys/1password.asc",
+            "keyring": "/usr/share/keyrings/1password-archive-keyring.gpg",
+            "fingerprint": "3FEF9748469ADBE15DA7CA80AC2D62742012EA22",
+        },
+        "docker-ce": {
+            "aliases": ["docker", "docker-engine"],
+            "source": f"deb [arch={deb_arch} signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable",
+            "list": "/etc/apt/sources.list.d/docker.list",
+            "key_url": "https://download.docker.com/linux/debian/gpg",
+            "keyring": "/usr/share/keyrings/docker.gpg",
+            "fingerprint": "9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
+            "packages": ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"],
+        },
+    }
+    if deb_arch == "amd64":
+        apps["steam-launcher"] = {
+            "aliases": ["steam", "steam-installer", "valve-steam"],
+            "source": "deb [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] https://repo.steampowered.com/steam/ stable steam\n"
+                      "deb-src [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] https://repo.steampowered.com/steam/ stable steam",
+            "list": "/etc/apt/sources.list.d/steam-stable.list",
+            "key_url": "https://repo.steampowered.com/steam/archive/stable/steam.gpg",
+            "fingerprint": "BA1816EF8E75005FCF5E27A1F24AEA9FB05498B7",
+            "keyring": "/usr/share/keyrings/steam.gpg",
+            "foreign_arch": "i386",
+            "packages": ["steam-launcher", "steam-libs-amd64", "steam-libs-i386:i386"],
+        }
+    return apps
+
+
+VENDOR_APPS = get_vendor_apps()
 _apt_updated = False
 
 # Debian deposunda adı farklı olan paketler
@@ -819,23 +871,34 @@ def install_from_system(name):
     """mindpkg deposunda olmayan paketi üretici deposu veya Debian deposundan kurar"""
     if not shutil.which("apt-get"):
         return False
+    if name in ("steam", "steam-launcher") and get_system_arch() == "aarch64":
+        print(f"{COLOR_RED}Hata:{COLOR_RESET} Steam resmi Linux istemcisi yalnızca x86_64 mimarisini destekler.")
+        print("ARM64 sistemlerde x86_64 emülasyonu (FEX-Emu veya Box64) gereklidir.")
+        sys.exit(1)
     pkg, spec = resolve_vendor_app(name)
     packages = [pkg]
     if spec:
-        arch = spec.get("foreign_arch")
-        if arch and arch not in subprocess.run(["dpkg", "--print-foreign-architectures"],
-                                                capture_output=True, text=True).stdout.split():
-            print(f"{COLOR_GREEN}==>{COLOR_RESET} {arch} (32 bit) mimarisi etkinleştiriliyor...")
-            subprocess.run(["dpkg", "--add-architecture", arch], check=True)
-        packages = spec.get("packages", [pkg])
-        url = spec["source"].split("\n")[0].split("]")[-1].split()[0]
-        if not apt_repo_configured(spec.get("match", url)):
-            print(f"{COLOR_GREEN}==>{COLOR_RESET} Resmi üretici deposu ekleniyor: {COLOR_BOLD}{url}{COLOR_RESET}")
-            if not Path(spec["keyring"]).exists():
-                fetch_vendor_key(spec)
-            Path(spec["list"]).write_text(spec["source"] + "\n", encoding="utf-8")
-        global _apt_updated
-        _apt_updated = False
+        if spec.get("arm64_fallback") and get_debian_arch() == "arm64":
+            fallback = spec["arm64_fallback"]
+            print(f"{COLOR_YELLOW}Bilgi:{COLOR_RESET} {pkg} için resmi ARM64 Linux paketi bulunmuyor; {COLOR_BOLD}{fallback}{COLOR_RESET} kuruluyor.")
+            pkg = fallback
+            packages = [pkg]
+            spec = None
+        else:
+            arch = spec.get("foreign_arch")
+            if arch and arch not in subprocess.run(["dpkg", "--print-foreign-architectures"],
+                                                    capture_output=True, text=True).stdout.split():
+                print(f"{COLOR_GREEN}==>{COLOR_RESET} {arch} (32 bit) mimarisi etkinleştiriliyor...")
+                subprocess.run(["dpkg", "--add-architecture", arch], check=True)
+            packages = spec.get("packages", [pkg])
+            url = spec["source"].split("\n")[0].split("]")[-1].split()[0]
+            if not apt_repo_configured(spec.get("match", url)):
+                print(f"{COLOR_GREEN}==>{COLOR_RESET} Resmi üretici deposu ekleniyor: {COLOR_BOLD}{url}{COLOR_RESET}")
+                if not Path(spec["keyring"]).exists():
+                    fetch_vendor_key(spec)
+                Path(spec["list"]).write_text(spec["source"] + "\n", encoding="utf-8")
+            global _apt_updated
+            _apt_updated = False
     else:
         pkg = APT_ALIASES.get(name, name)
         packages = [pkg]
@@ -863,14 +926,19 @@ def install_from_system(name):
 #     bilgisayarda kullanılmaz (/etc/mindos/kernel = debian).
 #   Kepler ve öncesi: güncel sürücüsü yok; açık kaynak nouveau kullanılır.
 # ------------------------------------------------------------------------------
-NVIDIA_REPO = {
-    "list": "/etc/apt/sources.list.d/cuda-debian13-x86_64.list",  # cuda-keyring paketiyle aynı yollar
-    "keyring": "/usr/share/keyrings/cuda-archive-keyring.gpg",
-    "source": "deb [signed-by=/usr/share/keyrings/cuda-archive-keyring.gpg] "
-              "https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/ /",
-    "key_url": "https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/8793F200.pub",
-    "fingerprint": "02182E60104FCDC26EAE1B8597A5D4CB8793F200",
-}
+def get_nvidia_repo():
+    n_arch = "sbsa" if get_system_arch() == "aarch64" else "x86_64"
+    return {
+        "list": f"/etc/apt/sources.list.d/cuda-debian13-{n_arch}.list",  # cuda-keyring paketiyle aynı yollar
+        "keyring": "/usr/share/keyrings/cuda-archive-keyring.gpg",
+        "source": f"deb [signed-by=/usr/share/keyrings/cuda-archive-keyring.gpg] "
+                  f"https://developer.download.nvidia.com/compute/cuda/repos/debian13/{n_arch}/ /",
+        "key_url": f"https://developer.download.nvidia.com/compute/cuda/repos/debian13/{n_arch}/8793F200.pub",
+        "fingerprint": "02182E60104FCDC26EAE1B8597A5D4CB8793F200",
+    }
+
+
+NVIDIA_REPO = get_nvidia_repo()
 KERNEL_FLAVOR_FILE = "/etc/mindos/kernel"
 # Yeni donanımın (RTX 50, yeni AMD/Intel ekran kartları, Wi-Fi) yazılım dosyaları trixie'ye gelmez, Debian'ın
 # backports'unda güncellenir. Backports'tan yalnızca firmware-* paketleri otomatik alınır, gerisi trixie'de kalır.
@@ -1031,7 +1099,8 @@ def install_nvidia():
               f"Debian'ın 6.12 LTS kernel'iyle çalışıyor. Bu bilgisayar Debian kernel'ine geçirilecek.")
         ensure_debian_nonfree()
         subprocess.run(["apt-get", "update", "-qq"], env=env, check=False)
-        res = subprocess.run(["apt-get", "install", "-y", *APT_OPTS, "linux-image-amd64", "linux-headers-amd64"],
+        deb_arch = get_debian_arch()
+        res = subprocess.run(["apt-get", "install", "-y", *APT_OPTS, f"linux-image-{deb_arch}", f"linux-headers-{deb_arch}"],
                              env=env)
         if res.returncode == 0:
             # 550 MindOS kernel'inde derlenmez; MindOS başlıkları kalırsa DKMS hata verip kurulumu durdurur
@@ -1151,7 +1220,8 @@ def install_broadcom():
         print(f"{COLOR_YELLOW}Bu bilgisayar Debian kernel'ini kullanıyor; Debian'ın broadcom-sta-dkms paketi kuruluyor.{COLOR_RESET}")
         ensure_debian_nonfree()
         subprocess.run(["apt-get", "update", "-qq"], check=False)
-        sys.exit(subprocess.run(["apt-get", "install", "-y", *APT_OPTS, "linux-headers-amd64",
+        deb_arch = get_debian_arch()
+        sys.exit(subprocess.run(["apt-get", "install", "-y", *APT_OPTS, f"linux-headers-{deb_arch}",
                                  "broadcom-sta-dkms"], env={**os.environ, **APT_ENV}).returncode)
     cards = broadcom_wifi()
     if not cards:
@@ -1540,7 +1610,7 @@ def build_package(source_dir, output_file=None):
     require_pkg_name(pkg_name)
     pkg_ver = meta.get("version", "1.0.0")
     pkg_rel = meta.get("release", "1")
-    pkg_arch = meta.get("architecture", "x86_64")
+    pkg_arch = meta.get("architecture", get_system_arch())
 
     if not output_file:
         output_file = f"{pkg_name}-{pkg_ver}-{pkg_rel}-{pkg_arch}.mind"

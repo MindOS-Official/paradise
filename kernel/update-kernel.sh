@@ -55,22 +55,43 @@ echo "==> derleniyor: $W ($(date +%T))"
 trap 'rc=$?; if [ $rc -eq 0 ]; then rm -rf "$W"; else echo "HATA (çıkış $rc): $BASH_COMMAND — klasör korundu: $W" >&2; fi' EXIT
 tar -xf "$TAR" -C "$W"
 cd "$W/linux-$V"
-cp "$P/config-mindos" .config
+BUILD_ARCH=${ARCH:-$(uname -m)}
+MAKE_ARGS=()
+if [ "$BUILD_ARCH" = "aarch64" ] || [ "$BUILD_ARCH" = "arm64" ]; then
+    DEB_ARCH="arm64"
+    CFG_SRC="$P/config-mindos-arm64"
+    [ -f "$CFG_SRC" ] || CFG_SRC="$P/config-mindos"
+    if [ "$(uname -m)" != "aarch64" ]; then
+        MAKE_ARGS+=(ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-)
+    fi
+else
+    DEB_ARCH="amd64"
+    CFG_SRC="$P/config-mindos"
+    if [ "$(uname -m)" = "aarch64" ]; then
+        MAKE_ARGS+=(ARCH=x86_64 CROSS_COMPILE=x86_64-linux-gnu-)
+    fi
+fi
+
+cp "$CFG_SRC" .config
 ./scripts/config --set-str LOCALVERSION "-mindos" --disable LOCALVERSION_AUTO \
     --enable DEBUG_INFO_BTF --enable DEBUG_INFO_BTF_MODULES --enable MODULE_ALLOW_BTF_MISMATCH
-make olddefconfig >/dev/null
+make "${MAKE_ARGS[@]}" olddefconfig >/dev/null
 export DEB_BUILD_PROFILES="pkg.linux-upstream.nokerneldbg"   # -dbg paketi yok (~4 GB)
-if ! make -j"$(nproc)" bindeb-pkg KDEB_PKGVERSION="$V-$REV" INSTALL_MOD_STRIP=1 >"$W/build.log" 2>&1; then
+if ! make -j"$(nproc)" "${MAKE_ARGS[@]}" bindeb-pkg KDEB_PKGVERSION="$V-$REV" INSTALL_MOD_STRIP=1 >"$W/build.log" 2>&1; then
     tail -40 "$W/build.log" >&2
     exit 1
 fi
-cp .config "$P/config-$V-mindos"
+cp .config "$P/config-$V-mindos-$DEB_ARCH"
 
 echo "==> derlendi, imzalanıyor ($(date +%T))"
 # 3) Secure Boot için imzala
-DEB=$(ls "$W"/linux-image-"$V"-mindos_*_amd64.deb | grep -v -- -dbg_)
+DEB=$(ls "$W"/linux-image-"$V"-mindos_*_"$DEB_ARCH".deb | grep -v -- -dbg_)
 "$B/secureboot/sign-kernel-deb.sh" "$DEB" "$V-$REV" "$OUT"
 # Kernel başlıkları (DKMS: NVIDIA, VirtualBox ...); imza gerekmez, isteğe bağlı bileşen olarak yayınlanır
-cp "$W"/linux-headers-"$V"-mindos_"$V-$REV"_amd64.deb "$OUT/"
-cp "$P/config-$V-mindos" "$P/config-mindos"   # sonraki sürüm bu ayardan başlar
-echo "✓ hazır: $OUT/linux-image-$V-mindos_$V-${REV}_amd64.deb"
+cp "$W"/linux-headers-"$V"-mindos_"$V-$REV"_"$DEB_ARCH".deb "$OUT/"
+if [ "$DEB_ARCH" = "arm64" ]; then
+    cp "$P/config-$V-mindos-$DEB_ARCH" "$P/config-mindos-arm64"
+else
+    cp "$P/config-$V-mindos-$DEB_ARCH" "$P/config-mindos"
+fi
+echo "✓ hazır: $OUT/linux-image-$V-mindos_$V-${REV}_$DEB_ARCH.deb"
