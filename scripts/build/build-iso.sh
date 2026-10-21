@@ -36,12 +36,20 @@ if [ "$TARGET_ARCH" = "arm64" ] || [ "$TARGET_ARCH" = "aarch64" ]; then
     echo "[*] Mimari: arm64 / aarch64 (UEFI önyükleme)"
     # ARM64 efi.img ve EFI/boot ağacını hazırla
     "$SCRIPT_DIR/create-efi-img.sh" "$I/boot/grub/efi.img" "$TARGET_ARCH" "$R"
-    mkdir -p "$I/EFI/boot"
+    mkdir -p "$I/EFI/boot" "$I/boot/grub/fonts" "$I/boot/grub/arm64-efi"
     if [ -f "$P/secureboot/arm64-efi/bootaa64.efi" ]; then
         cp -f "$P/secureboot/arm64-efi/bootaa64.efi" "$I/EFI/boot/bootaa64.efi"
         cp -f "$P/secureboot/arm64-efi/grubaa64.efi" "$I/EFI/boot/grubaa64.efi" 2>/dev/null || true
         cp -f "$P/secureboot/arm64-efi/mmaa64.efi" "$I/EFI/boot/mmaa64.efi" 2>/dev/null || true
         cp -f "$I/boot/grub/grub.cfg" "$I/EFI/boot/grub.cfg" 2>/dev/null || true
+    fi
+    if [ -f /usr/share/grub/unicode.pf2 ]; then
+        cp -f /usr/share/grub/unicode.pf2 "$I/boot/grub/fonts/unicode.pf2" 2>/dev/null || true
+    fi
+    if [ -d /usr/lib/grub/arm64-efi ]; then
+        cp -rf /usr/lib/grub/arm64-efi/*.mod "$I/boot/grub/arm64-efi/" 2>/dev/null || true
+    elif [ -d "$R/usr/lib/grub/arm64-efi" ]; then
+        cp -rf "$R"/usr/lib/grub/arm64-efi/*.mod "$I/boot/grub/arm64-efi/" 2>/dev/null || true
     fi
 else
     BCJ_OPT="-Xbcj x86"
@@ -78,9 +86,10 @@ if [ "$IS_ARM" = true ]; then
     xorriso -as mkisofs \
         -r -J -joliet-long -iso-level 3 \
         -V "$VOLID" \
-        -partition_offset 16 \
         -e boot/grub/efi.img -no-emul-boot \
-        -isohybrid-gpt-basdat \
+        -append_partition 2 0xef "$I/boot/grub/efi.img" \
+        -appended_part_as_gpt \
+        -partition_cyl_align all \
         -o "$OUT" "$I"
 else
     xorriso -as mkisofs \
@@ -95,5 +104,10 @@ else
         -isohybrid-gpt-basdat -isohybrid-apm-hfsplus \
         -o "$OUT" "$I"
 fi
+
+if [ -n "${SUDO_UID:-}" ] && [ -n "${SUDO_GID:-}" ]; then
+    chown "${SUDO_UID}:${SUDO_GID}" "$OUT" 2>/dev/null || true
+fi
+chmod 664 "$OUT" 2>/dev/null || true
 
 echo "[✓] $OUT ($(du -h "$OUT" | cut -f1))"

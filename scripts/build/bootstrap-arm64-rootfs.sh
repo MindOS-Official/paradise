@@ -243,10 +243,25 @@ DESKTOP_PKGS=(
     firmware-linux-free
     adwaita-icon-theme
     fonts-dejavu-core
-    fonts-cantarell
     live-boot-initramfs-tools
     live-config
     live-config-systemd
+    efibootmgr
+    dosfstools
+    btrfs-progs
+    xfsprogs
+    file-roller
+    bash-completion
+    apparmor
+    bluetooth
+    alsa-utils
+    bzip2
+    7zip
+    bolt
+    binutils
+    console-setup
+    keyboard-configuration
+    user-setup
 )
 
 DEBIAN_FRONTEND=noninteractive chroot "$ROOTFS" apt-get install -y "${DESKTOP_PKGS[@]}"
@@ -270,19 +285,21 @@ if [ -n "$APPS_DEB" ] && [ -f "$APPS_DEB" ]; then
     rm -f "$ROOTFS/tmp/mindos-apps.deb"
 fi
 
-# Step 4: Integrate mindpkg and MindOS Tools
-echo "[4/6] Integrating mindpkg package manager and desktop overlays for ARM64..."
+# Step 4: Desktop Overlays and mindpkg Integration
+echo "[4/6] Integrating MindOS overlays and mindpkg package manager for ARM64..."
+
+# Copy overlays first (Mind Arc, Mind Helper, extensions, dconf, etc.)
+if [ -d "$PARADISE_DIR/overlay" ]; then
+    echo "[*] Applying MindOS Paradise system overlay..."
+    cp -a "$PARADISE_DIR/overlay/." "$ROOTFS/"
+fi
+
+# Integrate mindpkg AFTER overlay so arm64 repository configuration is preserved
 MINDPKG_SRC="$PARADISE_DIR/src/mindpkg/mindpkg"
 if [ ! -f "$MINDPKG_SRC" ]; then
     MINDPKG_SRC="/usr/local/bin/mindpkg"
 fi
 ARCH=arm64 "$SCRIPT_DIR/integrate-mindpkg.sh" "$ROOTFS" "$MINDPKG_SRC"
-
-# Copy overlays (Mind Arc, Mind Helper, extensions, dconf, etc.)
-if [ -d "$PARADISE_DIR/overlay" ]; then
-    echo "[*] Applying MindOS Paradise system overlay..."
-    cp -a "$PARADISE_DIR/overlay/." "$ROOTFS/"
-fi
 
 # Copy src applications
 if [ -d "$PARADISE_DIR/src/mind-arc" ]; then
@@ -378,30 +395,27 @@ find "$ISO_ROOT/boot/dtbs" -mindepth 2 -name "*.dtb" -exec cp -u {} "$ISO_ROOT/b
 
 # Step 6: Configure GRUB UEFI Boot for ARM64
 echo "[6/6] Generating ARM64 UEFI GRUB configuration..."
+mkdir -p "$ISO_ROOT/boot/grub/fonts" "$ISO_ROOT/EFI/boot"
+if [ -f /usr/share/grub/unicode.pf2 ]; then
+    cp -f /usr/share/grub/unicode.pf2 "$ISO_ROOT/boot/grub/fonts/unicode.pf2"
+fi
+
 cat > "$ISO_ROOT/boot/grub/grub.cfg" <<'EOF'
 set default=0
 set timeout=5
 
 insmod efi_gop
-insmod efi_uga
-insmod video_bochs
-insmod video_cirrus
 insmod all_video
 insmod font
-insmod serial
-
-serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
-terminal_input console serial
-terminal_output console serial
 
 if loadfont /boot/grub/fonts/unicode.pf2 ; then
     set gfxmode=auto
     insmod gfxterm
-    terminal_output gfxterm serial
+    terminal_output gfxterm console
 fi
 
 menuentry "MindOS Paradise (ARM64 Live - UEFI / Auto)" --class mindos --class gnu-linux --class gnu --class os {
-    linux /live/vmlinuz boot=live components quiet splash console=tty0 console=ttyAMA0,115200
+    linux /live/vmlinuz boot=live components quiet splash plymouth.theme=mindos console=tty0 console=ttyAMA0,115200
     initrd /live/initrd.img
     if [ -n "${devicetree_path}" ]; then
         devicetree ${devicetree_path}
@@ -411,6 +425,28 @@ menuentry "MindOS Paradise (ARM64 Live - UEFI / Auto)" --class mindos --class gn
         devicetree /live/dtb.img
     elif [ -f /live/devicetree ]; then
         devicetree /live/devicetree
+    fi
+}
+
+menuentry "Install MindOS Paradise" --class mindos-install --class gnu-linux {
+    linux /live/vmlinuz boot=live components quiet splash plymouth.theme=mindos mindos.install console=tty0 console=ttyAMA0,115200
+    initrd /live/initrd.img
+    if [ -n "${devicetree_path}" ]; then
+        devicetree ${devicetree_path}
+    elif [ -f /boot/dtb ]; then
+        devicetree /boot/dtb
+    elif [ -f /live/dtb.img ]; then
+        devicetree /live/dtb.img
+    elif [ -f /live/devicetree ]; then
+        devicetree /live/devicetree
+    fi
+}
+
+menuentry "MindOS Paradise (English)" --class mindos --class gnu-linux {
+    linux /live/vmlinuz boot=live components quiet splash plymouth.theme=mindos locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC console=tty0 console=ttyAMA0,115200
+    initrd /live/initrd.img
+    if [ -n "${devicetree_path}" ]; then
+        devicetree ${devicetree_path}
     fi
 }
 
@@ -457,7 +493,15 @@ menuentry "MindOS Paradise (ARM64 Safe Graphics)" --class mindos --class gnu-lin
         devicetree ${devicetree_path}
     fi
 }
+
+if [ -f /EFI/boot/mmaa64.efi ]; then
+    menuentry "Secure Boot: Enroll MindOS key (first boot only)" --class secureboot {
+        chainloader /EFI/boot/mmaa64.efi
+    }
+fi
 EOF
+
+cp -f "$ISO_ROOT/boot/grub/grub.cfg" "$ISO_ROOT/EFI/boot/grub.cfg" 2>/dev/null || true
 
 
 # Clean up apt caches and host resolv.conf
