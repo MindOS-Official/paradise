@@ -39,6 +39,7 @@ search --set=root --file /.disk/info
 set prefix=($root)/boot/grub
 configfile ($root)/boot/grub/grub.cfg
 EOF
+cp "$W/boot/grub/grub.cfg" "$W/EFI/boot/grub.cfg"
 
 # 2) Secure Boot sertifikası
 if [ -f "$CER" ]; then

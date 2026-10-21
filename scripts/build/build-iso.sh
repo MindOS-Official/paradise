@@ -41,6 +41,7 @@ if [ "$TARGET_ARCH" = "arm64" ] || [ "$TARGET_ARCH" = "aarch64" ]; then
         cp -f "$P/secureboot/arm64-efi/bootaa64.efi" "$I/EFI/boot/bootaa64.efi"
         cp -f "$P/secureboot/arm64-efi/grubaa64.efi" "$I/EFI/boot/grubaa64.efi" 2>/dev/null || true
         cp -f "$P/secureboot/arm64-efi/mmaa64.efi" "$I/EFI/boot/mmaa64.efi" 2>/dev/null || true
+        cp -f "$I/boot/grub/grub.cfg" "$I/EFI/boot/grub.cfg" 2>/dev/null || true
     fi
 else
     BCJ_OPT="-Xbcj x86"
