@@ -2,6 +2,7 @@
 # MindOS Paradise: rootfs + iso_root -> hibrit (BIOS + UEFI) ISO
 # kullanım: sudo build-iso.sh <build_dizini> <cikti.iso>
 set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 B="${1:?build dizini (rootfs/ ve iso_root/ içeren)}"
 # Kaynaktaki programlar imajdakiyle aynı olmalı (eski bir kopya ISO'ya girmesin)
 for pair in "mindpkg/mindpkg:usr/local/bin/mindpkg" "mind-arc/main.py:opt/mind-arc/main.py" \
@@ -52,6 +53,9 @@ fi
 
 echo "[2/4] filesystem.squashfs (xz + $BCJ_OPT, 1M blok)..."
 rm -f "$I/live/filesystem.squashfs"
+if [ "$IS_ARM" = true ]; then
+    rm -f "$R/usr/bin/qemu-aarch64-static"
+fi
 mksquashfs "$R" "$I/live/filesystem.squashfs" \
     -noappend -comp xz -b 1M $BCJ_OPT -Xdict-size 100% \
     -wildcards -e 'proc/*' 'sys/*' 'dev/*' 'run/*' 'tmp/*' 'var/tmp/*' 'mnt/*' \

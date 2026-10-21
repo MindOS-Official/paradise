@@ -10,6 +10,7 @@
 #   -h, --help         Show help message
 
 set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 SUITE="trixie"
 MIRROR="http://deb.debian.org/debian"
@@ -79,10 +80,10 @@ echo "=========================================================="
 mkdir -p "$ROOTFS" "$ISO_ROOT" "$ISO_ROOT/live" "$ISO_ROOT/boot/grub" "$ISO_ROOT/EFI/boot" "$ISO_ROOT/.disk"
 
 # Ensure host tools
-for tool in debootstrap xorriso mksquashfs; do
-    if ! command -v "$tool" &>/dev/null && [ ! -x "/usr/sbin/$tool" ]; then
+for tool in debootstrap xorriso mksquashfs mkfs.vfat mcopy; do
+    if ! command -v "$tool" &>/dev/null && [ ! -x "/usr/sbin/$tool" ] && [ ! -x "/sbin/$tool" ]; then
         echo "[!] Required tool missing: $tool. Installing..."
-        apt-get update -qq && apt-get install -y -qq "$tool"
+        apt-get update -qq && apt-get install -y -qq "$tool" || true
     fi
 done
 
@@ -166,11 +167,24 @@ EOF
 cp -L /etc/resolv.conf "$ROOTFS/etc/resolv.conf" 2>/dev/null || true
 
 # User creation (mindos:mindos)
-chroot "$ROOTFS" useradd -m -s /bin/bash -G sudo,adm,dialout,audio,video mindos 2>/dev/null || true
+if ! chroot "$ROOTFS" id -u mindos &>/dev/null; then
+    chroot "$ROOTFS" useradd -m -s /bin/bash mindos
+fi
+for grp in sudo adm dialout audio video plugdev netdev cdrom; do
+    chroot "$ROOTFS" usermod -aG "$grp" mindos 2>/dev/null || true
+done
 echo "mindos:mindos" | chroot "$ROOTFS" chpasswd
 echo "root:root" | chroot "$ROOTFS" chpasswd
 echo "mindos ALL=(ALL) NOPASSWD:ALL" > "$ROOTFS/etc/sudoers.d/01-mindos"
 chmod 0440 "$ROOTFS/etc/sudoers.d/01-mindos"
+
+# Locale generation
+if [ -f "$ROOTFS/etc/locale.gen" ]; then
+    sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$ROOTFS/etc/locale.gen" 2>/dev/null || true
+    sed -i 's/^# *tr_TR.UTF-8 UTF-8/tr_TR.UTF-8 UTF-8/' "$ROOTFS/etc/locale.gen" 2>/dev/null || true
+    chroot "$ROOTFS" locale-gen 2>/dev/null || true
+fi
+echo "LANG=en_US.UTF-8" > "$ROOTFS/etc/default/locale"
 
 # Step 4: Integrate mindpkg and MindOS Tools
 echo "[4/6] Integrating mindpkg package manager for ARM64..."
@@ -186,8 +200,11 @@ if [ -d "$PARADISE_DIR/branding" ]; then
     cp -r "$PARADISE_DIR/branding/"* "$ROOTFS/" 2>/dev/null || true
 fi
 
-# Step 5: Extract Kernel and Initrd for ISO Boot
+# Step 5: Generate Initrd and Extract Kernel for ISO Boot
 echo "[5/6] Preparing ISO live boot kernel and initrd..."
+echo "[*] Ensuring live-boot support in initramfs..."
+chroot "$ROOTFS" update-initramfs -u -k all 2>/dev/null || chroot "$ROOTFS" update-initramfs -c -k all 2>/dev/null || true
+
 VMLINUZ=$(ls -1t "$ROOTFS/boot/vmlinuz-"* 2>/dev/null | head -n1 || true)
 INITRD=$(ls -1t "$ROOTFS/boot/initrd.img-"* 2>/dev/null | head -n1 || true)
 
@@ -228,6 +245,12 @@ menuentry "MindOS Paradise (ARM64 Safe Graphics)" --class mindos --class gnu-lin
     initrd /live/initrd.img
 }
 EOF
+
+# Clean up apt caches and host resolv.conf
+chroot "$ROOTFS" apt-get clean 2>/dev/null || true
+rm -rf "$ROOTFS"/var/lib/apt/lists/*
+rm -f "$ROOTFS/etc/resolv.conf"
+ln -sf /run/systemd/resolve/stub-resolv.conf "$ROOTFS/etc/resolv.conf" 2>/dev/null || true
 
 # Clean up mounts before finishing
 cleanup_mounts
