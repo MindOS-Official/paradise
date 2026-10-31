@@ -24,6 +24,14 @@ try:
 except ImportError:
     mindos_prefs = None
 
+try:
+    import mind_link
+except ImportError:
+    try:
+        from . import mind_link
+    except ImportError:
+        mind_link = None
+
 MINDPKG = "/usr/local/bin/mindpkg"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
@@ -261,6 +269,10 @@ def mind_installed(name):
     return os.path.exists(f"/var/lib/mindpkg/installed/{name}.json")
 
 
+if mind_link and hasattr(mind_link, "LINK_TEXTS"):
+    TEXTS.update(mind_link.LINK_TEXTS)
+
+
 class ExtraTexts:
     """Dil değişince yeniden yazılacak etiketleri tutar"""
 
@@ -269,7 +281,12 @@ class ExtraTexts:
         self.items = []
 
     def t(self, key, **fmt):
-        tr, en = TEXTS[key]
+        if key in TEXTS:
+            tr, en = TEXTS[key]
+        elif mind_link and key in mind_link.LINK_TEXTS:
+            tr, en = mind_link.LINK_TEXTS[key]
+        else:
+            tr, en = (key, key)
         s = en if getattr(self.win, "current_lang_code", "tr") == "en" else tr
         return s.format(**fmt) if fmt else s
 
@@ -1229,7 +1246,7 @@ class BroadcomGroup:
 
 
 def build_extra_pages(win):
-    """Ana pencereye Paket Merkezi ve Sistem Bakımı sayfalarını ekler"""
+    """Ana pencereye Paket Merkezi, Sistem Bakımı ve Mind Link sayfalarını ekler"""
     win.extra_texts = ExtraTexts(win)
     win.extra_updates = SystemUpdate(win, win.extra_texts)
     win.view_stack.add_named(win.extra_updates.page, "updates")
@@ -1237,6 +1254,13 @@ def build_extra_pages(win):
     win.view_stack.add_named(win.extra_packages.page, "packages")
     win.extra_maintenance = Maintenance(win, win.extra_texts)
     win.view_stack.add_named(win.extra_maintenance.page, "maintenance")
+
+    # Mind Link (MindUI Ecosystem / Phone Pairing)
+    if mind_link:
+        mind_link.inject_mind_link_css()
+        win.extra_mind_link = mind_link.MindLinkPage(win, win.extra_texts)
+        win.view_stack.add_named(win.extra_mind_link.page, "mind_link")
+
     if hasattr(win, "page_hardware"):  # Donanım → NVIDIA (yalnızca NVIDIA kartı varsa görünür)
         win.extra_nvidia = NvidiaGroup(win, win.extra_texts)
         win.page_hardware.add(win.extra_nvidia.group)
@@ -1252,9 +1276,19 @@ def build_extra_pages(win):
 
 
 def extra_sidebar_items(win):
-    t = win.extra_texts.t if hasattr(win, "extra_texts") else (lambda k: TEXTS[k][0])
-    return [("updates", "⬆️", t("updates")), ("packages", "📦", t("packages")),
-            ("maintenance", "🛠️", t("maintenance"))]
+    if hasattr(win, "extra_texts"):
+        t = win.extra_texts.t
+    else:
+        lang = getattr(win, "current_lang_code", "tr")
+        t = lambda k: (TEXTS[k][1] if lang == "en" else TEXTS[k][0]) if k in TEXTS else k
+    items = [
+        ("updates", "⬆️", t("updates")),
+        ("packages", "📦", t("packages")),
+        ("maintenance", "🛠️", t("maintenance"))
+    ]
+    if mind_link:
+        items.append(("mind_link", "📱", t("mind_link")))
+    return items
 
 
 def update_extra_texts(win):
@@ -1262,6 +1296,8 @@ def update_extra_texts(win):
         win.extra_texts.refresh()
         win.extra_packages.refresh()
         win.extra_updates.refresh()
+        if hasattr(win, "extra_mind_link"):
+            win.extra_mind_link.refresh()
         if hasattr(win, "extra_nvidia"):
             win.extra_nvidia.refresh()
             win.extra_broadcom.refresh()

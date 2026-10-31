@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Mind Link Service (mind-link-service)
+=====================================
+Desktop ecosystem service daemon for MindOS Paradise.
+Provides:
+  - Background Universal Clipboard synchronization between MindOS and MindUI phones
+  - Peer discovery listener on UDP port 4242
+  - Active session manager on TCP port 4243
+  - Persistent outbound connection manager to paired MindUI devices
+  - Desktop notifications for nearby MindUI devices in setup mode
+"""
+
+import os
+import sys
+import time
+import json
+import socket
+import select
+import shutil
+import signal
+import argparse
+import subprocess
+import threading
+from typing import Dict, List, Optional, Set
+
+DEFAULT_BROADCAST_PORT = 4242
+DEFAULT_SERVICE_PORT = 4243
+CONFIG_PATH = os.path.expanduser("~/.config/mindos/paired_devices.json")
+PID_FILE = os.path.expanduser("~/.config/mindos/mind-link-service.pid")
+
+# In-memory clipboard fallback for headless/background runs
+_MEM_CLIPBOARD = ""
+
+
+def send_desktop_notification(title: str, message: str, icon: str = "phone-symbolic"):
+    if shutil.which("notify-send"):
+        try:
+            subprocess.run([
+                "notify-send",
+                "-a", "Mind Link",
+                "-i", icon,
+                title,
+                message
+            ], check=False)
+        except Exception:
+            pass
+
+
+def read_clipboard() -> Optional[str]:
+    global _MEM_CLIPBOARD
+    if shutil.which("wl-paste") and os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            res = subprocess.run(["wl-paste", "--no-newline"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=1, text=True)
+            if res.returncode == 0:
+                return res.stdout
+        except Exception:
+            pass
+    if shutil.which("xclip") and os.environ.get("DISPLAY"):
+        try:
+            res = subprocess.run(["xclip", "-selection", "clipboard", "-o"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=1, text=True)
+            if res.returncode == 0:
+                return res.stdout
+        except Exception:
+            pass
+    return _MEM_CLIPBOARD if _MEM_CLIPBOARD else None
+
+
+def write_clipboard(text: str) -> bool:
+    global _MEM_CLIPBOARD
+    if not text:
+        return False
+    _MEM_CLIPBOARD = text
+    written = False
+    if shutil.which("wl-copy") and os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            proc = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE)
+            proc.communicate(input=text.encode("utf-8"), timeout=2)
+            written = (proc.returncode == 0)
+        except Exception:
+            pass
+    if shutil.which("xclip") and os.environ.get("DISPLAY"):
+        try:
+            proc = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+            proc.communicate(input=text.encode("utf-8"), timeout=2)
+            written = (proc.returncode == 0)
+        except Exception:
+            pass
+    return written or True
+
+
+class MindLinkServiceDaemon:
+    def __init__(self, port: int = DEFAULT_SERVICE_PORT, broadcast_port: int = DEFAULT_BROADCAST_PORT):
+        self.port = port
+        self.broadcast_port = broadcast_port
+        self.running = False
+        self.last_clipboard = ""
+        self.last_remote_clipboard = ""
+        self.active_clients: List[socket.socket] = []
+        self.connected_device_ids: Set[str] = set()
+        self.lock = threading.Lock()
+        self.seen_setup_devices = set()
+
+    def load_paired_devices(self) -> List[dict]:
+        if not os.path.exists(CONFIG_PATH):
+            return []
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("devices", [])
+        except Exception:
+            return []
+
+    def start(self):
+        self.running = True
+        os.makedirs(os.path.dirname(PID_FILE), exist_ok=True)
+        with open(PID_FILE, "w") as f:
+            f.write(str(os.getpid()))
+
+        print(f"[MindLinkService] Starting on TCP :{self.port} (UDP Broadcast :{self.broadcast_port}) PID={os.getpid()}")
+
+        # Thread 1: UDP Discovery Listener
+        t_discovery = threading.Thread(target=self._udp_listener_loop, daemon=True, name="UDPDiscovery")
+        t_discovery.start()
+
+        # Thread 2: Clipboard Monitor Loop
+        t_clip = threading.Thread(target=self._clipboard_monitor_loop, daemon=True, name="ClipboardMonitor")
+        t_clip.start()
+
+        # Thread 3: Persistent Outbound Connector Loop for Paired Devices
+        t_conn = threading.Thread(target=self._paired_device_connector_loop, daemon=True, name="PairedDeviceConnector")
+        t_conn.start()
+
+        # Main Thread: TCP Service Listener
+        self._tcp_server_loop()
+
+    def stop(self):
+        self.running = False
+        if os.path.exists(PID_FILE):
+            try:
+                os.remove(PID_FILE)
+            except Exception:
+                pass
+        with self.lock:
+            for c in list(self.active_clients):
+                try:
+                    c.close()
+                except Exception:
+                    pass
+            self.active_clients.clear()
+
+    def _udp_listener_loop(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except (AttributeError, OSError):
+            pass
+        try:
+            sock.bind(("0.0.0.0", self.broadcast_port))
+            sock.settimeout(1.0)
+        except Exception as e:
+            print(f"[MindLinkService] UDP bind error: {e}", file=sys.stderr)
+            return
+
+        while self.running:
+            try:
+                data, addr = sock.recvfrom(4096)
+                if not data:
+                    continue
+                msg = json.loads(data.decode("utf-8"))
+                msg_type = msg.get("type")
+                if msg_type == "mindui_beacon":
+                    dev_id = msg.get("device_id")
+                    dev_name = msg.get("device_name", "MindUI Cihazı")
+                    state = msg.get("state", "ready")
+                    # If device is in setup mode and not yet paired or notified
+                    if state == "setup_mode" and dev_id not in self.seen_setup_devices:
+                        paired_ids = [d.get("device_id") for d in self.load_paired_devices()]
+                        if dev_id not in paired_ids:
+                            self.seen_setup_devices.add(dev_id)
+                            send_desktop_notification(
+                                "Mind Link — Yeni Cihaz Algılandı",
+                                f"‘{dev_name}’ kurulum aşamasında. Eşleştirmek için Mind Arc'ı açın.",
+                                "phone-symbolic"
+                            )
+            except (socket.timeout, json.JSONDecodeError):
+                continue
+            except Exception as e:
+                if self.running:
+                    time.sleep(0.5)
+
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+    def _paired_device_connector_loop(self):
+        """Continuously maintains active outbound TCP connections to all paired devices."""
+        while self.running:
+            devices = self.load_paired_devices()
+            for dev in devices:
+                did = dev.get("device_id")
+                if not did or did in self.connected_device_ids:
+                    continue
+                feats = dev.get("features", {})
+                if not feats.get("universal_clipboard", True):
+                    continue
+
+                ip = dev.get("ip")
+                port = int(dev.get("port", DEFAULT_SERVICE_PORT))
+                if not ip:
+                    continue
+
+                # Spawn connector in worker thread
+                t = threading.Thread(target=self._connect_to_device, args=(did, ip, port), daemon=True)
+                t.start()
+
+            time.sleep(3.0)
+
+    def _connect_to_device(self, did: str, ip: str, port: int):
+        with self.lock:
+            if did in self.connected_device_ids:
+                return
+            self.connected_device_ids.add(did)
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(4.0)
+            sock.connect((ip, port))
+            # Handshake active session
+            req = {
+                "type": "link_session",
+                "desktop_name": socket.gethostname(),
+                "timestamp": time.time()
+            }
+            sock.sendall((json.dumps(req) + "\n").encode("utf-8"))
+
+            with self.lock:
+                self.active_clients.append(sock)
+
+            # Receive loop
+            buffer = b""
+            sock.settimeout(60.0)
+            while self.running:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    if not line.strip():
+                        continue
+                    msg = json.loads(line.decode("utf-8"))
+                    self._process_message(sock, msg)
+        except Exception:
+            pass
+        finally:
+            with self.lock:
+                if sock in self.active_clients:
+                    self.active_clients.remove(sock)
+                self.connected_device_ids.discard(did)
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def _tcp_server_loop(self):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            server.bind(("0.0.0.0", self.port))
+            server.listen(5)
+            server.settimeout(1.0)
+        except Exception as e:
+            print(f"[MindLinkService] TCP bind error: {e}", file=sys.stderr)
+            return
+
+        while self.running:
+            try:
+                client_sock, client_addr = server.accept()
+                threading.Thread(target=self._handle_client, args=(client_sock, client_addr), daemon=True).start()
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self.running:
+                    print(f"[MindLinkService] Accept error: {e}", file=sys.stderr)
+                    time.sleep(0.5)
+
+        try:
+            server.close()
+        except Exception:
+            pass
+
+    def _handle_client(self, client: socket.socket, addr):
+        client.settimeout(60.0)
+        with self.lock:
+            self.active_clients.append(client)
+
+        buffer = b""
+        try:
+            while self.running:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    if not line.strip():
+                        continue
+                    msg = json.loads(line.decode("utf-8"))
+                    self._process_message(client, msg)
+        except Exception:
+            pass
+        finally:
+            with self.lock:
+                if client in self.active_clients:
+                    self.active_clients.remove(client)
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    def _process_message(self, client: socket.socket, msg: dict):
+        mtype = msg.get("type")
+        if mtype == "ping":
+            reply = {"type": "pong", "timestamp": time.time()}
+            client.sendall((json.dumps(reply) + "\n").encode("utf-8"))
+
+        elif mtype == "clipboard_sync":
+            content = msg.get("content", "")
+            if content and content != self.last_remote_clipboard and content != self.last_clipboard:
+                self.last_remote_clipboard = content
+                self.last_clipboard = content
+                write_clipboard(content)
+                send_desktop_notification(
+                    "Evrensel Pano",
+                    f"Telefondan metin kopyalandı ({len(content)} karakter)",
+                    "edit-paste-symbolic"
+                )
+
+        elif mtype == "pair_request":
+            # Direct pair request from phone
+            dev_name = msg.get("device_name", "MindUI Phone")
+            pin = msg.get("pin") or msg.get("code", "000000")
+            send_desktop_notification(
+                "MindUI Eşleştirme İsteği",
+                f"‘{dev_name}’ eşleşmek istiyor. Doğrulama kodu: {pin}",
+                "phone-symbolic"
+            )
+            # Acknowledge
+            reply = {
+                "type": "pair_confirm",
+                "code": pin,
+                "accepted": True,
+                "auth_token": f"mind_sec_{int(time.time())}"
+            }
+            client.sendall((json.dumps(reply) + "\n").encode("utf-8"))
+
+    def _clipboard_monitor_loop(self):
+        curr = read_clipboard()
+        if curr:
+            self.last_clipboard = curr
+
+        while self.running:
+            time.sleep(0.7)
+            new_val = read_clipboard()
+            if new_val and new_val != self.last_clipboard and new_val != self.last_remote_clipboard:
+                self.last_clipboard = new_val
+                self.broadcast_clipboard(new_val)
+
+    def broadcast_clipboard(self, content: str):
+        payload = json.dumps({
+            "type": "clipboard_sync",
+            "content": content,
+            "timestamp": time.time()
+        }) + "\n"
+        data = payload.encode("utf-8")
+
+        with self.lock:
+            dead_clients = []
+            for c in self.active_clients:
+                try:
+                    c.sendall(data)
+                except Exception:
+                    dead_clients.append(c)
+            for dc in dead_clients:
+                if dc in self.active_clients:
+                    self.active_clients.remove(dc)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Mind Link Ecosystem Background Daemon")
+    parser.add_argument("--daemon", action="store_true", help="Run as foreground daemon")
+    parser.add_argument("--status", action="store_true", help="Check status of running service")
+    parser.add_argument("--rescan", action="store_true", help="Send discovery broadcast probe")
+    parser.add_argument("--sync-clipboard", type=str, help="Broadcast custom text to clipboard")
+    args = parser.parse_args()
+
+    if args.status:
+        if os.path.exists(PID_FILE):
+            try:
+                with open(PID_FILE, "r") as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 0)
+                print(f"Mind Link Service is ACTIVE (PID {pid})")
+                if os.path.exists(CONFIG_PATH):
+                    with open(CONFIG_PATH, "r") as f:
+                        cfg = json.load(f)
+                    print(f"Paired devices: {len(cfg.get('devices', []))}")
+                    for d in cfg.get("devices", []):
+                        print(f" - {d.get('device_name')} ({d.get('device_model')}) IP={d.get('ip')}")
+                return 0
+            except (ProcessLookupError, ValueError):
+                print("Mind Link Service PID file exists but process is NOT running.")
+                return 1
+        print("Mind Link Service is NOT running.")
+        return 1
+
+    if args.sync_clipboard:
+        write_clipboard(args.sync_clipboard)
+        print(f"Clipboard updated locally: '{args.sync_clipboard}'")
+        return 0
+
+    if args.rescan:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        payload = json.dumps({"type": "mindarc_discover", "timestamp": time.time()}).encode("utf-8")
+        s.sendto(payload, ("255.255.255.255", DEFAULT_BROADCAST_PORT))
+        s.sendto(payload, ("127.0.0.1", DEFAULT_BROADCAST_PORT))
+        s.close()
+        print("Discovery probe sent on UDP port 4242.")
+        return 0
+
+    service = MindLinkServiceDaemon()
+
+    def handle_sig(sig, frame):
+        service.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, handle_sig)
+    signal.signal(signal.SIGTERM, handle_sig)
+
+    service.start()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,13 @@
+[Unit]
+Description=Mind Link Ecosystem & Universal Clipboard Daemon
+Documentation=file:///usr/bin/mind-link-service
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/mind-link-service
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

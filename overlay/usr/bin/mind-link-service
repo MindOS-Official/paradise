@@ -1,0 +1,3 @@
+#!/bin/sh
+# Mind Link Ekosistem Hizmeti başlatıcısı
+exec /usr/bin/python3 /opt/mind-arc/mind-link-service "$@"

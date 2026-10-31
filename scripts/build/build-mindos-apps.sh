@@ -43,6 +43,9 @@ FILES=(
   usr/share/mime/packages/mindos-mind.xml
   etc/xdg/fastfetch/config.jsonc
   etc/xdg/fastfetch/logo-paradise.txt
+  usr/bin/mind-link-service
+  usr/lib/systemd/user/mind-link.service
+  usr/lib/systemd/user/default.target.wants/mind-link.service
 )
 mkdir -p "$P/DEBIAN"
 for f in "${FILES[@]}"; do

@@ -136,3 +136,8 @@ usr/lib/firmware/Lontium
 etc/initramfs-tools/modules
 etc/initramfs-tools/hooks/mindos-arm64-hardware
 etc/default/grub.d/20-mindos-arm64.cfg
+
+# --- Mind Link (MindUI Ecosystem)
+usr/bin/mind-link-service
+usr/lib/systemd/user/mind-link.service
+usr/lib/systemd/user/default.target.wants/mind-link.service
