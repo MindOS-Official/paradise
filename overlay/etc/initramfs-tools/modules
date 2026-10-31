@@ -1,0 +1,32 @@
+# MindOS Paradise: Essential ARM64 early-boot hardware drivers
+# Ensures Apple Silicon, Raspberry Pi 4/5, Qualcomm Snapdragon, and UEFI boot devices
+
+# --- Apple Silicon (M1 / M2 / Pro / Max)
+apple-mailbox
+apple-dart
+apple-sart
+nvme_apple
+spi-apple
+applespi
+simpledrm
+
+# --- Raspberry Pi 4 & Raspberry Pi 5
+bcm2835-mbox
+raspberrypi-firmware
+raspberrypi-power
+bcm2835-power
+pcie-brcmstb
+rp1
+sdhci-iproc
+sdhci-brcmstb
+vc4
+v3d
+
+# --- Qualcomm Snapdragon (X Elite / SC8280XP)
+qcom_scm
+qcom_rpmh
+msm
+
+# --- Serial Console Redirection & Generic ARM64
+amba-pl011
+efivarfs

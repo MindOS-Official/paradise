@@ -13,3 +13,4 @@ MindOS Paradise ISO'su aşağıdaki bileşenleri, kendi lisanslarıyla birlikte 
 | shim, GRUB (Secure Boot zinciri) | GPL-3.0 (GRUB), BSD-2 (shim) | Debian'ın imzalı `shim-signed` ve `grub-efi-amd64-signed` paketleri |
 | Cantarell yazı tipi (markalama betikleri) | SIL OFL 1.1 | Debian `fonts-cantarell` paketi |
 | Broadcom STA "wl" Wi-Fi sürücüsü (`broadcom-sta-dkms`, isteğe bağlı) | Broadcom sınırlı lisansı (kapalı kaynak parça) | Debian `broadcom-sta` paketi; Linux 7.x yaması `patches/broadcom-sta-6.30.223.271-kernel7.patch` |
+| ARM64 firmware (`overlay/usr/lib/firmware`: Realtek `rtl_bt`/`rtl_nic`/`rtlwifi`/`realtek`, Lontium, Broadcom `brcm`) | Dosya başına, linux-firmware `LICENCE.*` / `WHENCE` | <https://gitlab.com/kernel-firmware/linux-firmware>; Apple'a özel `brcm/*apple*` dosyaları repoda yoktur, derleme sırasında yerelden eklenir |

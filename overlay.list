@@ -125,3 +125,14 @@ etc/calamares/modules/packages.conf
 etc/calamares/modules/users.conf
 usr/share/calamares/helpers/calamares-sources-final
 usr/share/applications/calamares-install-debian.desktop
+
+# --- ARM64 Donanım ve Firmware
+usr/lib/firmware/brcm
+usr/lib/firmware/realtek
+usr/lib/firmware/rtl_bt
+usr/lib/firmware/rtl_nic
+usr/lib/firmware/rtlwifi
+usr/lib/firmware/Lontium
+etc/initramfs-tools/modules
+etc/initramfs-tools/hooks/mindos-arm64-hardware
+etc/default/grub.d/20-mindos-arm64.cfg

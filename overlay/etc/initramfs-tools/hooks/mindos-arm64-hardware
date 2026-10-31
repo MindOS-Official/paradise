@@ -1,0 +1,45 @@
+#!/bin/sh
+# MindOS Paradise: ARM64 Device Tree & Firmware Hardware Enablement Hook
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0 ;; esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# Check target architecture
+ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+[ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ] || exit 0
+
+# 1. Force load and register essential storage, display and bus drivers
+for mod in nvme_apple apple-dart apple-sart spi-apple applespi \
+           bcm2835-mbox raspberrypi-firmware raspberrypi-power pcie-brcmstb rp1 \
+           sdhci-iproc sdhci-brcmstb vc4 v3d qcom_scm qcom_rpmh amba-pl011 simpledrm; do
+    manual_add_modules "$mod" || true
+    echo "$mod" >> "${DESTDIR}/conf/modules" 2>/dev/null || true
+done
+
+# 2. Stage Device Tree Blobs (DTB) in initramfs preserving vendor subdirectories
+mkdir -p "${DESTDIR}/boot/dtbs"
+for vendor in apple broadcom qcom allwinner rockchip; do
+    mkdir -p "${DESTDIR}/boot/dtbs/${vendor}"
+    for dtb_dir in /usr/lib/linux-image-*/${vendor} /boot/dtbs*/${vendor} /usr/lib/firmware/${vendor}; do
+        if [ -d "$dtb_dir" ]; then
+            cp -rf "$dtb_dir"/* "${DESTDIR}/boot/dtbs/${vendor}/" 2>/dev/null || true
+            cp -rf "$dtb_dir"/*.dtb "${DESTDIR}/boot/dtbs/" 2>/dev/null || true
+        fi
+    done
+done
+
+# 3. Include essential Broadcom, Apple, Realtek & Qualcomm early firmware
+mkdir -p "${DESTDIR}/usr/lib/firmware" "${DESTDIR}/lib/firmware"
+for fw_subdir in brcm realtek rtl_bt rtl_nic rtlwifi Lontium qcom; do
+    for base in /usr/lib/firmware /lib/firmware; do
+        if [ -d "${base}/${fw_subdir}" ]; then
+            mkdir -p "${DESTDIR}/usr/lib/firmware/${fw_subdir}" "${DESTDIR}/lib/firmware/${fw_subdir}"
+            cp -rn "${base}/${fw_subdir}"/* "${DESTDIR}/usr/lib/firmware/${fw_subdir}/" 2>/dev/null || true
+            cp -rn "${base}/${fw_subdir}"/* "${DESTDIR}/lib/firmware/${fw_subdir}/" 2>/dev/null || true
+        fi
+    done
+done
+
+exit 0

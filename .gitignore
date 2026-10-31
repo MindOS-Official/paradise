@@ -17,3 +17,6 @@ tests/vm/*.sock
 tests/vm/*.fd
 __pycache__/
 *.pyc
+# Apple'ın macOS'tan çıkarılan Broadcom Wi-Fi/Bluetooth firmware'i yeniden dağıtılamaz;
+# derleme makinesinde yerel olarak durur, repoya girmez.
+overlay/usr/lib/firmware/brcm/*apple*
